@@ -3,7 +3,7 @@
     "name": "placeholder",
     "type": "module",
     "scripts": {
-        "dev": "node ./src/index.ts"
+        "dev": "node --env-file=.env ./src/index.ts"
     },
     "devDependencies": {
         "@effect/eslint-plugin": "^0.3.2",
@@ -20,5 +20,10 @@
         "ignoredBuiltDependencies": [
             "unrs-resolver"
         ]
+    },
+    "dependencies": {
+        "@effect/platform": "^0.94.1",
+        "@effect/platform-node": "^0.104.0",
+        "@mistralai/mistralai": "^1.11.0"
     }
 }
