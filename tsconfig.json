@@ -3,7 +3,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "resolveJsonModule": true,
-    "moduleResolution": "NodeNext",
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     // "lib": [
     //   "ESNext"
@@ -14,13 +14,12 @@
     "incremental": true,
     "composite": true,
     // Target modern JavaScript (ES2022+) whilst staying closely compatible with the Node.js module system.
-    "target": "ES2022",
-    "module": "NodeNext",
+    "target": "esnext",
+    "module": "ESNext",
     "moduleDetection": "force", // Treat every non-declaration file as a module.
     "esModuleInterop": false, // Do not fiddle with import/export statements
     "verbatimModuleSyntax": true, // Only transform/eliminate type-only import/export statements.
     "allowJs": false, // If you touch this, a puppy dies.
-    "rewriteRelativeImportExtensions": true, // Rewrite `.ts` imports to `.js` at build time.
     "erasableSyntaxOnly": true, // Allows to run directly with node and type removal
     // Emit source- & declaration maps.
     "declarationMap": true,
@@ -34,7 +33,16 @@
     // Miscellaneoaus
     "skipLibCheck": true, // Skip type checking of third party libraries.
     "noErrorTruncation": true, // Do not truncate error messages.
-    "types": [], // Disable automatic loading of `@types/*` packages.
+		// solidjs.
+		"jsx": "react-jsx",
+    "jsxImportSource": "solid-js",
+		// Modules
+    // "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    // Type Checking & Safety
+    "types": ["vite/client"],
+
     "plugins": [
       {
         "name": "@effect/language-service",

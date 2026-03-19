@@ -2,7 +2,7 @@
     "editor.codeActionsOnSave": {
         "source.fixAll.eslint": "always",
     },
-		"typescript.tsdk": "node_modules/typescript/lib",
+		"typescript.tsdk": "node_modules\\typescript\\lib",
     "files.exclude": {
 			"**/.git": true,
 			"**/.svn": true,
