@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import type { Component, JSX } from "solid-js"
-import { createSignal } from "solid-js"
+import { createSignal, onCleanup } from "solid-js"
+import { Eye, EyeOff } from "./components/icons.tsx"
 import { parseFile } from "./index.ts"
 import { MistralClientConfig } from "./modules/mistral-ocr.ts"
 import { mistralApiKeyAtom, useAtom } from "./modules/reactivity.ts"
@@ -31,6 +32,18 @@ const App: Component = () => {
 		setMarkdownText(result)
 	}
 
+	const [showApiKey, setShowApiKey] = createSignal(false)
+	const apiKeyInputSectionElementId = "api-key-area"
+	const hideKeyListener = (e: MouseEvent) => {
+		const target = e.target as Node | null
+		if (!target) return
+		const apiKeyInputSection = document.getElementById(apiKeyInputSectionElementId)
+		if (apiKeyInputSection?.contains(target)) return
+		setShowApiKey(false)
+	}
+	window.addEventListener("click", hideKeyListener)
+	onCleanup(() => window.removeEventListener("click", hideKeyListener))
+
 	let fileInput: HTMLInputElement | undefined
 
 	return (
@@ -46,18 +59,38 @@ const App: Component = () => {
 						<h2 class="heading text-xl font-semibold">Output</h2>
 						<div class="inline-flex flex-col items-end gap-1">
 							<div class="w-full mb-2 flex items-center gap-2 justify-end">
-								<label for="api-key" class="text-sm text-slate-600">API Key</label>
-								<input
-									id="api-key"
-									type="password"
-									value={apiKey() || undefined}
-									onInput={(e) => {
-										const v = (e.currentTarget as HTMLInputElement).value
-										setApiKey(v)
-										localStorage.setItem("mistralApiKey", v)
-									}}
-									class="px-2 py-1 rounded-md border border-slate-300 text-sm w-64"
-								/>
+								<label
+									for={"api-key-input"}
+									class="text-sm text-slate-600"
+								>
+									API Key
+								</label>
+								<div
+									id={apiKeyInputSectionElementId}
+									class="flex items-stretch border border-slate-300 rounded-md overflow-hidden"
+								>
+									<input
+										id={"api-key-input"}
+										type={!showApiKey() ? "password" : "text"}
+										value={apiKey() || ""}
+										onInput={(e) => {
+											const v = (e.currentTarget as HTMLInputElement).value
+											setApiKey(v)
+										}}
+										class="px-2 py-1 text-sm outline-none border-none w-[30ch]"
+									/>
+									<button
+										id={"api-key-show-toggle"}
+										type="button"
+										onClick={(event) => {
+											event.stopPropagation()
+											setShowApiKey((prev) => !prev)
+										}}
+										class="px-3 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 border-l border-slate-300"
+									>
+										{showApiKey() ? <EyeOff class="size-5" /> : <Eye class="size-5" />}
+									</button>
+								</div>
 							</div>
 							<div class="flex items-center gap-3">
 								<button
