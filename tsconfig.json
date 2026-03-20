@@ -59,6 +59,7 @@
 , ".local/Input.tsx"  ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+		".agents/**"
   ],
 }

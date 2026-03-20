@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { Component, JSX } from "solid-js"
 import { createSignal, onCleanup } from "solid-js"
 import { Eye, EyeOff } from "./components/icons.tsx"
+import { Popover, PopoverAnchor, PopoverContent } from "./components/ui/popover.tsx"
 import { parseFile } from "./index.ts"
 import { MistralClientConfig } from "./modules/mistral-ocr.ts"
 import { mistralApiKeyAtom, useAtom } from "./modules/reactivity.ts"
@@ -33,6 +34,10 @@ const App: Component = () => {
 	}
 
 	const [showApiKey, setShowApiKey] = createSignal(false)
+	const [rememberKey, setRememberKey] = createSignal(false)
+	const [rememberPending, setRememberPending] = createSignal(false)
+	const [rememberPin, setRememberPin] = createSignal("")
+	const [rememberPopoverOpen, setRememberPopoverOpen] = createSignal(false)
 	const apiKeyInputSectionElementId = "api-key-area"
 	const hideKeyListener = (e: MouseEvent) => {
 		const target = e.target as Node | null
@@ -44,7 +49,42 @@ const App: Component = () => {
 	window.addEventListener("click", hideKeyListener)
 	onCleanup(() => window.removeEventListener("click", hideKeyListener))
 
+	const handleRememberCheckbox = (checked: boolean) => {
+		if (checked) {
+			setRememberPending(true)
+			setRememberPopoverOpen(true)
+			return
+		}
+		setRememberKey(false)
+		setRememberPending(false)
+		setRememberPin("")
+		setRememberPopoverOpen(false)
+	}
+
+	const handleRememberPopoverOpenChange = (open: boolean) => {
+		setRememberPopoverOpen(open)
+		if (!open && !rememberKey()) {
+			setRememberPending(false)
+			setRememberPin("")
+		}
+	}
+
+	const handleSavePin = () => {
+		if (!rememberPin()) return
+		setRememberKey(true)
+		setRememberPending(false)
+		setRememberPopoverOpen(false)
+	}
+
+	const handleCancelRemember = () => {
+		setRememberKey(false)
+		setRememberPending(false)
+		setRememberPin("")
+		setRememberPopoverOpen(false)
+	}
+
 	let fileInput: HTMLInputElement | undefined
+	let rememberAnchorEl: HTMLElement | undefined
 
 	return (
 		<div class="app-container min-h-screen p-6 bg-slate-100 text-slate-900">
@@ -88,9 +128,65 @@ const App: Component = () => {
 										}}
 										class="px-3 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 border-l border-slate-300"
 									>
-										{showApiKey() ? <EyeOff class="size-5" /> : <Eye class="size-5" />}
+										{!showApiKey() ? <EyeOff class="size-5" /> : <Eye class="size-5" />}
 									</button>
 								</div>
+							</div>
+							<div class="w-full flex justify-end">
+								<Popover
+									open={rememberPopoverOpen()}
+									onOpenChange={handleRememberPopoverOpenChange}
+								>
+									<PopoverAnchor ref={(el: HTMLElement | undefined) => (rememberAnchorEl = el)}>
+										<label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+											<input
+												type="checkbox"
+												checked={rememberKey() || rememberPending()}
+												onInput={(e) => {
+													handleRememberCheckbox((e.currentTarget as HTMLInputElement).checked)
+												}}
+												class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+											/>
+											Remember key
+										</label>
+									</PopoverAnchor>
+									<PopoverContent
+										class="max-w-xs rounded-xl border border-slate-200 bg-white p-4 shadow-lg text-sm text-slate-700"
+										excludedElements={[() => rememberAnchorEl]}
+									>
+										<p class="mb-2 text-xs text-slate-500">
+											The API will be saved encrypted to minimize the risk of XSS attacks.
+										</p>
+										<label class="mb-1 text-[10px] uppercase tracking-wide text-slate-500" for="remember-pin-input">
+											Enter PIN
+										</label>
+										<input
+											id="remember-pin-input"
+											type="password"
+											placeholder="4+ characters"
+											value={rememberPin()}
+											onInput={(e) => setRememberPin((e.currentTarget as HTMLInputElement).value)}
+											class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+										/>
+										<div class="mt-3 flex justify-end gap-2">
+											<button
+												type="button"
+												onClick={handleCancelRemember}
+												class="text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
+											>
+												Cancel
+											</button>
+											<button
+												type="button"
+												onClick={handleSavePin}
+												class="rounded-md bg-indigo-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+												disabled={!rememberPin()}
+											>
+												Save PIN
+											</button>
+										</div>
+									</PopoverContent>
+								</Popover>
 							</div>
 							<div class="flex items-center gap-3">
 								<button
