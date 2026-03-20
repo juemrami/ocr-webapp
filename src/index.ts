@@ -2,7 +2,7 @@ import { FileSystem } from "@effect/platform"
 import { NodeContext } from "@effect/platform-node"
 import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpageobject.js"
 import { Console, Effect, Layer, pipe } from "effect"
-import { MistralOcrClient } from "./modules/mistral-ocr.ts"
+import { MistralOcrClient } from "./modules/mistral-ocr"
 
 const demoDir = "./demos"
 const demoOutput = `${demoDir}/output.md`

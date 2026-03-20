@@ -34,10 +34,9 @@
     "skipLibCheck": true, // Skip type checking of third party libraries.
     "noErrorTruncation": true, // Do not truncate error messages.
 		// solidjs.
-		"jsx": "react-jsx",
+		"jsx": "preserve",
     "jsxImportSource": "solid-js",
 		// Modules
-    // "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "noEmit": true,
     // Type Checking & Safety
@@ -56,7 +55,7 @@
     "ci/**/*",
     "tsup.config.ts",
     "**/*.d.ts"
-  ],
+, ".local/Input.tsx"  ],
   "exclude": [
     "node_modules",
     "dist"

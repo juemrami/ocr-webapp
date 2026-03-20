@@ -23,6 +23,36 @@
   color: #b318f0;
 }
 
+.card {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin: 16px auto;
+  max-width: 840px;
+  padding: 18px;
+  text-align: left;
+}
+
+.filePreview,
+.markdownOutput {
+  margin-top: 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #f9f9f9;
+  padding: 12px;
+  max-height: 250px;
+  overflow: auto;
+}
+
+textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
 @keyframes logo-spin {
   from {
     transform: rotate(0deg);
