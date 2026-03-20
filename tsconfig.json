@@ -5,6 +5,7 @@
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
+		"allowImportingTsExtensions": true,
     // "lib": [
     //   "ESNext"
     // ],

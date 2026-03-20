@@ -1,14 +1,26 @@
+import { Effect } from "effect"
 import type { Component, JSX } from "solid-js"
 import { createSignal } from "solid-js"
+import { parseFile } from "./index.ts"
 
 const App: Component = () => {
-	const [markdownText, _setMarkdownText] = createSignal("")
+	const [markdownText, setMarkdownText] = createSignal("")
 	const [uploadedFile, setuploadedFile] = createSignal<File | null>(null)
 
 	const onFileChange: JSX.EventHandler<HTMLInputElement, Event> = async (e) => {
 		const file = e.currentTarget.files?.[0]
 		if (!file) return
 		setuploadedFile(file)
+	}
+
+	const onDoOcr = async () => {
+		if (!uploadedFile()) return
+		console.log(import.meta.env.VITE_MISTRAL_API_KEY)
+		const result = await Effect.runPromise(parseFile({
+			fileName: uploadedFile()!.name,
+			content: uploadedFile()!
+		}))
+		setMarkdownText(result)
 	}
 
 	let fileInput: HTMLInputElement | undefined
@@ -42,7 +54,7 @@ const App: Component = () => {
 								<button
 									class="button-behavior px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
 									disabled={!uploadedFile()}
-									onClick={() => console.log("Start OCR triggered")}
+									onClick={() => onDoOcr()}
 								>
 									Start OCR
 								</button>

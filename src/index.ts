@@ -1,13 +1,8 @@
-import { FileSystem } from "@effect/platform"
-import { NodeContext } from "@effect/platform-node"
+import type { FileT } from "@mistralai/mistralai/models/components"
 import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpageobject.js"
-import { Console, Effect, Layer, pipe } from "effect"
-import { MistralOcrClient } from "./modules/mistral-ocr"
-
-const demoDir = "./demos"
-const demoOutput = `${demoDir}/output.md`
-const demoFileName = "petri-7s-repair-manual-demo.pdf"
-const demoInput = `${demoDir}/${demoFileName}`
+import { Console, Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
+import { MistralClientConfig, MistralOcrClient } from "./modules/mistral-ocr"
 
 /**
  * Replaces image references in markdown with base64 data URIs
@@ -50,19 +45,22 @@ function getCombinedMarkdown(pages: OCRPageObject[]): string {
 	return markdowns.join("\n\n")
 }
 
-Effect.runPromise(pipe(
+export const parseFile = (file: FileT) =>
 	Effect.gen(function*() {
 		yield* Console.log("Starting Mistral OCR demo...")
 		const ocrClient = yield* MistralOcrClient
-		const fs = yield* FileSystem.FileSystem
-		const demoInputBytes = yield* fs.readFile(demoInput)
-		yield* Console.log(`Read ${demoInputBytes.length} bytes from disk: ${demoInput}`)
+		const fileSize = "byteLength" in file.content
+			? file.content.byteLength
+			: "length" in file.content
+			? file.content.length
+			: "size" in file.content
+			? file.content.size
+			: undefined
+
+		yield* Console.log(`Read ${fileSize ?? "unknown"} bytes from disk: ${file.fileName}`)
 		yield* Console.log("Uploading file to Mistral OCR...")
 		const uploadedFile = yield* ocrClient.uploadFile({
-			file: {
-				fileName: demoFileName,
-				content: demoInputBytes
-			},
+			file,
 			purpose: "ocr"
 		})
 		yield* Console.log(`File uploaded with ID: ${uploadedFile.id}`)
@@ -78,12 +76,17 @@ Effect.runPromise(pipe(
 		const combinedMarkdown = getCombinedMarkdown(processed.pages)
 
 		// Log the result
-		yield* Console.log("Combined Markdown:")
-		yield* Console.log(combinedMarkdown)
-
-		yield* fs.writeFileString(demoOutput, combinedMarkdown)
-	}),
-	Effect.provide(
-		Layer.mergeAll(MistralOcrClient.Default, NodeContext.layer)
+		return combinedMarkdown
+	}).pipe(
+		Effect.provide(
+			Layer.mergeAll(
+				Layer.provide(
+					MistralOcrClient.Default,
+					MistralClientConfig.Live({
+						apiKey: import.meta.env.VITE_MISTRAL_API_KEY
+					})
+				),
+				FetchHttpClient.layer
+			)
+		)
 	)
-))
