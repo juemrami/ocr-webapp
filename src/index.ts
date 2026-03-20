@@ -2,7 +2,7 @@ import type { FileT } from "@mistralai/mistralai/models/components"
 import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpageobject.js"
 import { Console, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
-import { MistralClientConfig, MistralOcrClient } from "./modules/mistral-ocr"
+import { MistralOcrClient } from "./modules/mistral-ocr"
 
 /**
  * Replaces image references in markdown with base64 data URIs
@@ -80,12 +80,7 @@ export const parseFile = (file: FileT) =>
 	}).pipe(
 		Effect.provide(
 			Layer.mergeAll(
-				Layer.provide(
-					MistralOcrClient.Default,
-					MistralClientConfig.Live({
-						apiKey: import.meta.env.VITE_MISTRAL_API_KEY
-					})
-				),
+				MistralOcrClient.Default,
 				FetchHttpClient.layer
 			)
 		)

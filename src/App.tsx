@@ -2,10 +2,13 @@ import { Effect } from "effect"
 import type { Component, JSX } from "solid-js"
 import { createSignal } from "solid-js"
 import { parseFile } from "./index.ts"
+import { MistralClientConfig } from "./modules/mistral-ocr.ts"
+import { mistralApiKeyAtom, useAtom } from "./modules/reactivity.ts"
 
 const App: Component = () => {
 	const [markdownText, setMarkdownText] = createSignal("")
 	const [uploadedFile, setuploadedFile] = createSignal<File | null>(null)
+	const [apiKey, setApiKey] = useAtom(mistralApiKeyAtom)
 
 	const onFileChange: JSX.EventHandler<HTMLInputElement, Event> = async (e) => {
 		const file = e.currentTarget.files?.[0]
@@ -14,12 +17,17 @@ const App: Component = () => {
 	}
 
 	const onDoOcr = async () => {
-		if (!uploadedFile()) return
-		console.log(import.meta.env.VITE_MISTRAL_API_KEY)
-		const result = await Effect.runPromise(parseFile({
-			fileName: uploadedFile()!.name,
-			content: uploadedFile()!
-		}))
+		if (!uploadedFile() || !apiKey()) return
+		const result = await Effect.runPromise(
+			parseFile({
+				fileName: uploadedFile()!.name,
+				content: uploadedFile()!
+			}).pipe(
+				Effect.provideService(MistralClientConfig, {
+					apiKey: apiKey()!
+				})
+			)
+		)
 		setMarkdownText(result)
 	}
 
@@ -37,6 +45,20 @@ const App: Component = () => {
 					<div class="flex items-end justify-between gap-4 mb-1">
 						<h2 class="heading text-xl font-semibold">Output</h2>
 						<div class="inline-flex flex-col items-end gap-1">
+							<div class="w-full mb-2 flex items-center gap-2 justify-end">
+								<label for="api-key" class="text-sm text-slate-600">API Key</label>
+								<input
+									id="api-key"
+									type="password"
+									value={apiKey() || undefined}
+									onInput={(e) => {
+										const v = (e.currentTarget as HTMLInputElement).value
+										setApiKey(v)
+										localStorage.setItem("mistralApiKey", v)
+									}}
+									class="px-2 py-1 rounded-md border border-slate-300 text-sm w-64"
+								/>
+							</div>
 							<div class="flex items-center gap-3">
 								<button
 									class="button-behavior px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium"
@@ -53,7 +75,7 @@ const App: Component = () => {
 								/>
 								<button
 									class="button-behavior px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-									disabled={!uploadedFile()}
+									disabled={!uploadedFile() || !apiKey()}
 									onClick={() => onDoOcr()}
 								>
 									Start OCR
