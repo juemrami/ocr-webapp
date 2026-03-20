@@ -2,6 +2,10 @@
     "editor.codeActionsOnSave": {
         "source.fixAll.eslint": "always",
     },
+		"chat.instructionsFilesLocations": {
+			".github": true,
+			".claude/rules": true
+		},
 		"typescript.tsdk": "node_modules\\typescript\\lib",
     "files.exclude": {
 			"**/.git": true,
