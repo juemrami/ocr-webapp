@@ -1,8 +1,6 @@
 import { Mistral } from "@mistralai/mistralai"
-import type { OCRRequest } from "@mistralai/mistralai/models/components/ocrrequest.js"
-import type { OCRResponse as MistralOcrResponse } from "@mistralai/mistralai/models/components/ocrresponse.js"
-import type { UploadFileOut as MistralUploadedFile } from "@mistralai/mistralai/models/components/uploadfileout.js"
-import type { FilesApiRoutesUploadFileMultiPartBodyParams as MistralUploadFileArgs } from "@mistralai/mistralai/models/operations/index.js"
+import type { CreateFileResponse, OCRRequest, OCRResponse } from "@mistralai/mistralai/models/components"
+import type { MultiPartBodyParams } from "@mistralai/mistralai/models/operations"
 import { Data, Effect, Layer, ServiceMap } from "effect"
 
 const models = {
@@ -28,8 +26,8 @@ export class MistralOcrClient extends ServiceMap.Service<MistralOcrClient>()("Mi
 		const client = new Mistral({ apiKey: clientConfig.apiKey })
 
 		return {
-			uploadFile: Effect.fn(function*(file: MistralUploadFileArgs) {
-				return yield* Effect.tryPromise<MistralUploadedFile, MistralError>({
+			uploadFile: Effect.fn(function*(file: MultiPartBodyParams) {
+				return yield* Effect.tryPromise<CreateFileResponse, MistralError>({
 					try: () => client.files.upload(file),
 					catch: (err) =>
 						new MistralError({
@@ -40,7 +38,7 @@ export class MistralOcrClient extends ServiceMap.Service<MistralOcrClient>()("Mi
 			}),
 			processDocument: Effect.fn(
 				function*(args: Omit<OCRRequest, "model">) {
-					return yield* Effect.tryPromise<MistralOcrResponse, MistralError>({
+					return yield* Effect.tryPromise<OCRResponse, MistralError>({
 						try: () =>
 							client.ocr.process({
 								...args,
