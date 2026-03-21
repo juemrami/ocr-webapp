@@ -55,6 +55,7 @@
     "src/**/*",
     "ci/**/*",
     "tsup.config.ts",
+		"eslint.config.mjs",
     "**/*.d.ts"
 , ".local/Input.tsx"  ],
   "exclude": [

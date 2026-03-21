@@ -5,6 +5,8 @@ import * as tsResolver from "eslint-import-resolver-typescript"
 import { importX as importPlugin } from "eslint-plugin-import-x"
 import { defineConfig } from "eslint/config"
 import * as tslint from "typescript-eslint"
+import path from "path"
+import { fileURLToPath } from "url"
 
 export default defineConfig(
 	js.configs.recommended,
@@ -19,6 +21,9 @@ export default defineConfig(
 		extends: [],
 		languageOptions: {
 			parser: tslint.parser,
+			parserOptions: {
+				tsconfigRootDir: path.dirname(fileURLToPath(import.meta.url)),
+			},
 			ecmaVersion: "latest",
 			sourceType: "module"
 		},
