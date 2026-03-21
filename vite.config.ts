@@ -2,10 +2,18 @@
 import tailwindcss from "@tailwindcss/vite"
 import devtools from "solid-devtools/vite"
 import { defineConfig } from "vite"
+import { analyzer } from "vite-bundle-analyzer"
 import solidPlugin from "vite-plugin-solid"
 
 export default defineConfig({
-	plugins: [devtools(), solidPlugin(), tailwindcss()],
+	plugins: [
+		analyzer({
+			analyzerPort: 7272
+		}),
+		devtools(),
+		solidPlugin(),
+		tailwindcss()
+	],
 	server: {
 		watch: {
 			ignored: ["**/.jj/**"]
