@@ -1,19 +1,21 @@
 // import { Mistral } from "@mistralai/mistralai"
-import { appendForm, encodeForm, encodeJSON } from "@mistralai/mistralai/lib/encodings.js"
+import { encodeForm, encodeJSON } from "@mistralai/mistralai/lib/encodings.js"
 import { getContentTypeFromFileName, readableStreamToArrayBuffer } from "@mistralai/mistralai/lib/files.js"
 import type { BackoffStrategy, RetryConfig } from "@mistralai/mistralai/lib/retries.js"
 import type { RequestOptions } from "@mistralai/mistralai/lib/sdks.js"
 import { resolveGlobalSecurity, type SecurityState } from "@mistralai/mistralai/lib/security.js"
 import { pathToFunc } from "@mistralai/mistralai/lib/url.js"
-import type { CreateFileResponse, OCRRequest, OCRResponse } from "@mistralai/mistralai/models/components"
+import type { CreateFileResponse, FileT, OCRRequest, OCRResponse } from "@mistralai/mistralai/models/components"
 import type { MultiPartBodyParams } from "@mistralai/mistralai/models/operations"
 import { isBlobLike } from "@mistralai/mistralai/types"
 import { isReadableStream } from "@mistralai/mistralai/types/streams.js"
 import { Data, Duration, Effect, identity, Layer, Match, pipe, Schedule, Schema, ServiceMap } from "effect"
+import { isEffect } from "effect/Effect"
 import { encodeBase64 } from "effect/Encoding"
 import { getOrElse } from "effect/Option"
 import { Headers, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import type { HttpMethod } from "effect/unstable/http/HttpMethod"
+import { appendFormDataValue } from "./mistral-http-client/http-utils"
 import { CreateFileResponse$inboundSchema, OCRResponse$inboundSchema } from "./mistral-http-client/schemas"
 
 const models = {
@@ -54,7 +56,14 @@ class InvalidMistralBaseUrl extends Data.TaggedError("InvalidMistralBaseUrl")<{
 }> {}
 export class MistralOpenApiSpecMissMatchError extends Data.TaggedError("MistralOpenApiSpecMissMatchError")<{
 	readonly message: string
-	readonly cause: unknown
+	readonly cause: Schema.SchemaError
+	readonly input?: unknown
+}> {}
+
+export class InvalidReadableStreamInFileContent extends Data.TaggedError("InvalidReadableStreamFileContent")<{
+	readonly message: string
+	/** https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError */
+	readonly cause: TypeError
 }> {}
 
 const matchStatus = <R>(status: number, cases: {
@@ -335,54 +344,116 @@ const pathToFuncOrDie = (path: string) =>
 		}
 	})
 const transientErrorStatusCodes: StatusCode[] = [429, 500, 502, 503, 504]
+
+const fileParamIsFileT = (u: MultiPartBodyParams["file"]): u is FileT => "fileName" in u || "content" in u
+export const httpBodyFromMultiPartBodyParams = Effect.fn(function*(request: MultiPartBodyParams) {
+	const body = HttpBody.formData(new FormData())
+	if (fileParamIsFileT(request.file)) {
+		const filename = request.file.fileName
+		// const rawContent = request.file.content
+		console.log("Appending file to form data body as ArrayBuffer")
+		const contentType = getContentTypeFromFileName(filename)
+			|| "application/octet-stream"
+		const content = yield* pipe(
+			request.file.content,
+			Match.type<typeof request.file.content>().pipe(
+				Match.when(
+					isReadableStream,
+					(stream) =>
+						pipe(
+							Effect.tryPromise(() => readableStreamToArrayBuffer(stream)),
+							Effect.catchTag("UnknownError", (err: TypeError) =>
+								Effect.fail(
+									new InvalidReadableStreamInFileContent({
+										message: "Failed to read content from provided ReadableStream",
+										cause: err
+									})
+								)),
+							Effect.map((buffer) => new Blob([buffer], { type: contentType }))
+						)
+				),
+				Match.when(
+					(u): u is Uint8Array => u instanceof Uint8Array,
+					(u8) => new Blob([new Uint8Array(u8)], { type: contentType })
+				),
+				Match.when(
+					(u): u is ArrayBuffer => u instanceof ArrayBuffer,
+					(ab) => new Blob([new Uint8Array(ab)], { type: contentType })
+				),
+				Match.when(
+					(u): u is Blob => isBlobLike(u),
+					(blob) => blob instanceof Blob ? blob : new Blob([blob], { type: contentType })
+				),
+				Match.exhaustive
+			),
+			(result) => isEffect(result) ? result : Effect.succeed(result)
+		)
+		console.log("Constructed Blob-like object for file upload:", content)
+		console.log("isBlobLike check for content object:", isBlobLike(content))
+		console.log("instance of Blob:", content instanceof Blob)
+		console.log("instance of ArrayBuffer:", content instanceof ArrayBuffer)
+		console.log("instance of Array:", Array.isArray(content))
+		appendFormDataValue(body, "file", content, filename)
+	} else {
+		console.log("Appending file to form data body unnamed as Blob")
+		appendFormDataValue(body, "file", request.file)
+	}
+	if (request.expiry !== undefined) {
+		appendFormDataValue(body, "expiry", request.expiry)
+	}
+	if (request.purpose !== undefined) {
+		appendFormDataValue(body, "purpose", request.purpose)
+	}
+	if (request.visibility !== undefined) {
+		appendFormDataValue(body, "visibility", request.visibility)
+	}
+	return body
+})
+
 class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 	make: Effect.gen(function*() {
 		const client = yield* ClientCore
 		return {
 			upload: Effect.fn(function*(request: MultiPartBodyParams, options?: ApiRequestOptions | undefined) {
 				// todo validate request params before making the call
-				const body = new FormData()
-				const file = request.file
-				if (isBlobLike(file)) {
-					appendForm(body, "file", file)
-				} else if (isReadableStream(file)) {
-					const buffer = yield* Effect.promise(() => readableStreamToArrayBuffer(file))
-					const contentType = getContentTypeFromFileName(file.fileName)
-						|| "application/octet-stream"
-					const blob = new Blob([buffer], { type: contentType })
-					appendForm(body, "file", blob, file.fileName)
-				} else if (file.content instanceof Uint8Array) {
-					const contentType = getContentTypeFromFileName(file.fileName) || "application/octet-stream"
-					appendForm(
-						body,
-						"file",
-						new Blob([new Uint8Array(file.content).buffer], {
-							type: contentType
-						}),
-						file.fileName
-					)
-				} else {
-					const contentType = getContentTypeFromFileName(file.fileName)
-						|| "application/octet-stream"
-					appendForm(
-						body,
-						"file",
-						new Blob([file.content as ArrayBuffer], { type: contentType }),
-						file.fileName
-					)
-				}
-				if (request.expiry !== undefined) {
-					appendForm(body, "expiry", request.expiry)
-				}
-				if (request.purpose !== undefined) {
-					appendForm(body, "purpose", request.purpose)
-				}
-				if (request.visibility !== undefined) {
-					appendForm(body, "visibility", request.visibility)
-				}
+				const body = yield* httpBodyFromMultiPartBodyParams(request)
 				const path = yield* pathToFuncOrDie("/v1/files")
 				const headers = Headers.fromInput({ Accept: "application/json" })
 				const requestSecurity = resolveGlobalSecurity({ apiKey: client.apiKey })
+				console.log("Form data body constructed for file upload request:")
+				console.dir(Object.fromEntries(body.formData.entries()), { depth: null, colors: true })
+				// Diagnostic: inspect the `file` entry closely to understand why filename/Blob
+				// information might be lost when passed to `appendForm`.
+				try {
+					const entry = body.formData.get("file")
+					console.log("--- FormData 'file' entry diagnostics ---")
+					console.log("typeof:", typeof entry)
+					console.log("instanceof Blob:", entry instanceof Blob)
+					console.log(
+						"constructor name:",
+						entry && (entry as any).constructor ? (entry as any).constructor.name : undefined
+					)
+					console.log("toString:", Object.prototype.toString.call(entry))
+					if (entry && typeof (entry as any).name !== "undefined") {
+						console.log("entry.name:", (entry as any).name)
+					}
+					if (entry && typeof (entry as any).size !== "undefined") {
+						console.log("entry.size:", (entry as any).size)
+					}
+					if (entry && typeof (entry as any).type !== "undefined") {
+						console.log("entry.type:", (entry as any).type)
+					}
+					if (entry && typeof (entry as any).arrayBuffer === "function") {
+						console.log("has arrayBuffer()")
+					}
+					if (entry && typeof (entry as any).stream === "function") {
+						console.log("has stream()")
+					}
+					console.log("--- end diagnostics ---")
+				} catch (err) {
+					console.log("Error while inspecting FormData file entry:", err)
+				}
+				console.log("Built HttpBody for file upload request:", body)
 				const httpRequest = yield* client.buildRequest({
 					config: {
 						security: requestSecurity,
@@ -390,7 +461,7 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 						baseURL: options?.serverURL,
 						path,
 						headers,
-						body: HttpBody.formData(body)
+						body
 					},
 					options
 				})
@@ -405,13 +476,16 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 						} :
 						undefined
 				})
-				return (yield* response.json.pipe(
+				const json = yield* response.json
+				return (yield* pipe(
+					json,
 					Schema.decodeUnknownEffect(CreateFileResponse$inboundSchema),
 					Effect.catchTag("SchemaError", (err) =>
 						Effect.fail(
 							new MistralOpenApiSpecMissMatchError({
 								message: "Response from server did not match expected schema:\n" + err.issue.toString(),
-								cause: err
+								cause: err,
+								input: json
 							})
 						))
 				)) satisfies CreateFileResponse as CreateFileResponse

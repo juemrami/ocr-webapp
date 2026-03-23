@@ -79,6 +79,11 @@ export const parseFile = (file: FileT) =>
 		// Log the result
 		return combinedMarkdown
 	}).pipe(
+		Effect.tapErrorTag("MistralOpenApiSpecMissMatchError", (error) =>
+			Effect.sync(() => {
+				console.error("Mistral OpenAPI spec mismatch error:", error)
+				console.log("Response", error.input)
+			})),
 		Effect.provide(Layer.provide(
 			FetchHttpClient.layer,
 			Layer.succeed(TracerPropagationEnabled, false) // cors issue with `traceparent` header, disable for now
