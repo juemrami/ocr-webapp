@@ -14,5 +14,8 @@
 			"**/.DS_Store": true,
 			"**/Thumbs.db": true
 		},
-    "hide-files.files": []
+		"hide-files.files": [],
+		"chat.agent.thinking.collapsedTools": "off",
+		"chat.agent.thinking.terminalTools": false,
+		"chat.agent.thinking.generateTitles": false
 }

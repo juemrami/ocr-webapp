@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+/// <reference types="vite/client" />
 import tailwindcss from "@tailwindcss/vite"
 import devtools from "solid-devtools/vite"
 import { defineConfig } from "vite"

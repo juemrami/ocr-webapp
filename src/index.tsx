@@ -1,5 +1,5 @@
 /* @refresh reload */
-/// <reference types="vite/client" />
+
 import { render } from "solid-js/web"
 import "solid-devtools"
 

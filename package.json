@@ -11,6 +11,8 @@
     "devDependencies": {
         "@effect/eslint-plugin": "^0.3.2",
         "@effect/language-service": "^0.40.1",
+				"@effect/platform-node": "4.0.0-beta.37",
+        "@effect/vitest": "4.0.0-beta.37",
         "@eslint/js": "^9.39.2",
         "@tailwindcss/vite": "^4.2.2",
         "eslint": "^9.39.2",

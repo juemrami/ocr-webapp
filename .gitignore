@@ -1,6 +1,7 @@
 .jj
-.env
+.env*
+!.env.*example
 node_modules
 dist
-.local
+*.local
 .agents/**
