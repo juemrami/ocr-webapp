@@ -2,6 +2,7 @@ import type { FileT } from "@mistralai/mistralai/models/components"
 import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpageobject.js"
 import { Console, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
+import { TracerPropagationEnabled } from "effect/unstable/http/HttpClient"
 import { MistralOcrClient } from "./modules/mistral-ocr"
 
 /**
@@ -78,10 +79,8 @@ export const parseFile = (file: FileT) =>
 		// Log the result
 		return combinedMarkdown
 	}).pipe(
-		Effect.provide(
-			Layer.mergeAll(
-				MistralOcrClient.Default,
-				FetchHttpClient.layer
-			)
-		)
+		Effect.provide(Layer.provide(
+			FetchHttpClient.layer,
+			Layer.succeed(TracerPropagationEnabled, false) // cors issue with `traceparent` header, disable for now
+		))
 	)

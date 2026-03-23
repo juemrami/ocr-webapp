@@ -5,7 +5,7 @@ import { Eye, EyeOff } from "./components/icons.tsx"
 import { Popover, PopoverAnchor, PopoverContent } from "./components/ui/popover.tsx"
 import { parseFile } from "./index.ts"
 import { decryptApiKey, encryptApiKey } from "./modules/encryption.ts"
-import { MistralClientConfig } from "./modules/mistral-ocr.ts"
+import { MistralOcrClient } from "./modules/mistral-ocr.ts"
 import { mistralApiKeyAtom, mistralEncryptedKeyAtom, useAtom } from "./modules/reactivity.ts"
 
 const App: Component = () => {
@@ -51,9 +51,9 @@ const App: Component = () => {
 				fileName: uploaded.name,
 				content: uploaded
 			}).pipe(
-				Effect.provideService(MistralClientConfig, {
+				Effect.provide(MistralOcrClient.Live({
 					apiKey
-				})
+				}))
 			)
 		)
 		setMarkdownText(result)

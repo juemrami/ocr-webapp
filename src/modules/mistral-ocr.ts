@@ -1,5 +1,5 @@
-import { Mistral } from "@mistralai/mistralai"
-import { appendForm, encodeForm } from "@mistralai/mistralai/lib/encodings.js"
+// import { Mistral } from "@mistralai/mistralai"
+import { appendForm, encodeForm, encodeJSON } from "@mistralai/mistralai/lib/encodings.js"
 import { getContentTypeFromFileName, readableStreamToArrayBuffer } from "@mistralai/mistralai/lib/files.js"
 import type { BackoffStrategy, RetryConfig } from "@mistralai/mistralai/lib/retries.js"
 import type { RequestOptions } from "@mistralai/mistralai/lib/sdks.js"
@@ -9,12 +9,12 @@ import type { CreateFileResponse, OCRRequest, OCRResponse } from "@mistralai/mis
 import type { MultiPartBodyParams } from "@mistralai/mistralai/models/operations"
 import { isBlobLike } from "@mistralai/mistralai/types"
 import { isReadableStream } from "@mistralai/mistralai/types/streams.js"
-import { Data, Duration, Effect, identity, Layer, pipe, Schedule, Schema, ServiceMap } from "effect"
+import { Data, Duration, Effect, identity, Layer, Match, pipe, Schedule, Schema, ServiceMap } from "effect"
 import { encodeBase64 } from "effect/Encoding"
 import { getOrElse } from "effect/Option"
 import { Headers, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import type { HttpMethod } from "effect/unstable/http/HttpMethod"
-import { CreateFileResponse$inboundSchema } from "./mistral-http-client/schemas"
+import { CreateFileResponse$inboundSchema, OCRResponse$inboundSchema } from "./mistral-http-client/schemas"
 
 const models = {
 	OCR1: "mistral-ocr-2503",
@@ -44,23 +44,11 @@ export class MistralError extends Data.TaggedError("MistralError")<{
 	readonly cause: unknown
 }> {}
 
-export class MistralClientConfig extends ServiceMap.Service<MistralClientConfig, {
-	apiKey: string
-}>()("ClientConfig") {
-	static Live = (cfg: Parameters<OmitThisParameter<typeof this.of>>[0]) =>
-		Layer.effect(MistralClientConfig, Effect.succeed(cfg))
-}
-
 class InvalidMistralApiPathUrl extends Data.TaggedError("InvalidMistralApiFunctionPath")<{
 	readonly message: string
 	readonly cause: unknown
 }> {}
 class InvalidMistralBaseUrl extends Data.TaggedError("InvalidMistralBaseUrl")<{
-	readonly message: string
-	readonly cause: unknown
-}> {}
-
-class InvalidMistralRequestError extends Data.TaggedError("InvalidMistralRequestError")<{
 	readonly message: string
 	readonly cause: unknown
 }> {}
@@ -100,24 +88,38 @@ const backoffStrategyToSchedule = (backoff: BackoffStrategy) =>
 			Schedule.during(Duration.millis(backoff.maxElapsedTime))
 		)
 	)
-
 const defaultBackoffSchedule = backoffStrategyToSchedule({
 	initialInterval: 500,
 	maxInterval: 60000,
 	exponent: 1.5,
 	maxElapsedTime: 3600000
 })
+const remapRetryConfigFromOptions = (options?: RequestOptions) => {
+	if (!options || !options.retries) return undefined
+	Match.value(options.retries.strategy).pipe(
+		Match.when("backoff", () => ({
+			codes: (options?.retryCodes as StatusCode[]) || transientErrorStatusCodes,
+			schedule: (options.retries as any).backoff
+				? backoffStrategyToSchedule((options.retries as any).backoff) :
+				defaultBackoffSchedule
+		})),
+		Match.when("none", () => undefined),
+		Match.exhaustive
+	)
+}
+
 interface ApiRequestOptions extends RequestOptions {
 	headers?: Headers.Headers
 	errorCodes?: Array<StatusCode>
 }
+type MistralClientConfig = {
+	apiKey?: string | Effect.Effect<string> | undefined
+	serverURL?: string | undefined
+	userAgent?: string | undefined
+	retryConfig?: RetryConfig | undefined
+}
 class ClientCore extends ServiceMap.Service<ClientCore>()("ClientCore", {
-	make: Effect.fn(function*(args: {
-		apiKey: string | Effect.Effect<string> | undefined
-		serverURL: string | undefined
-		userAgent: string | undefined
-		retryConfig: RetryConfig | undefined
-	}) {
+	make: Effect.fn(function*(args: MistralClientConfig) {
 		const baseUrl = args.serverURL !== undefined ? args.serverURL : "https://api.mistral.ai"
 		const validBaseUrl = yield* Effect.try({
 			try: () => pathToFunc(baseUrl)({}),
@@ -149,7 +151,6 @@ class ClientCore extends ServiceMap.Service<ClientCore>()("ClientCore", {
 		return {
 			baseUrl: validBaseUrl,
 			apiKey: (typeof args.apiKey === "string" || args.apiKey === undefined) ? args.apiKey : yield* args.apiKey,
-
 			buildRequest: Effect.fn(function*(args: {
 				config: {
 					method: HttpMethod
@@ -275,6 +276,7 @@ class ClientCore extends ServiceMap.Service<ClientCore>()("ClientCore", {
 				retryConfig: {
 					codes: Array<StatusCode>
 					schedule: Schedule.Schedule<any, any>
+					retryConnectionErrors?: boolean
 				} | undefined
 			}) {
 				const httpClient = pipe(
@@ -322,13 +324,22 @@ class ClientCore extends ServiceMap.Service<ClientCore>()("ClientCore", {
 		}
 	})
 }) {}
-
+const pathToFuncOrDie = (path: string) =>
+	Effect.try({
+		try: () => pathToFunc(path)(),
+		catch: (err) => {
+			throw new InvalidMistralApiPathUrl({
+				message: `Path to api function \`${path}\` is invalid or cannot be resolved`,
+				cause: err
+			})
+		}
+	})
+const transientErrorStatusCodes: StatusCode[] = [429, 500, 502, 503, 504]
 class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 	make: Effect.gen(function*() {
-		const clientConfig = yield* MistralClientConfig
+		const client = yield* ClientCore
 		return {
 			upload: Effect.fn(function*(request: MultiPartBodyParams, options?: ApiRequestOptions | undefined) {
-				const client = yield* ClientCore
 				// todo validate request params before making the call
 				const body = new FormData()
 				const file = request.file
@@ -369,19 +380,9 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 				if (request.visibility !== undefined) {
 					appendForm(body, "visibility", request.visibility)
 				}
-				const path = yield* Effect.try({
-					try: () => pathToFunc("/v1/files")(),
-					catch: (err) => {
-						throw new InvalidMistralApiPathUrl({
-							message: "path to function `/v1/files` is invalid or cannot be resolved",
-							cause: err
-						})
-					}
-				}).pipe(
-					Effect.orDie // Program should be considered broken if this path cannot be resolved
-				)
+				const path = yield* pathToFuncOrDie("/v1/files")
 				const headers = Headers.fromInput({ Accept: "application/json" })
-				const requestSecurity = resolveGlobalSecurity({ apiKey: clientConfig.apiKey })
+				const requestSecurity = resolveGlobalSecurity({ apiKey: client.apiKey })
 				const httpRequest = yield* client.buildRequest({
 					config: {
 						security: requestSecurity,
@@ -397,7 +398,7 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 					errorCodes: ["4XX", "5XX"],
 					retryConfig: options?.retries?.strategy === "backoff" ?
 						{
-							codes: (options?.retryCodes as StatusCode[]) || [429, 500, 502, 503, 504],
+							codes: (options?.retryCodes as StatusCode[]) || transientErrorStatusCodes,
 							schedule: options.retries.backoff
 								? backoffStrategyToSchedule(options.retries.backoff) :
 								defaultBackoffSchedule
@@ -409,7 +410,7 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 					Effect.catchTag("SchemaError", (err) =>
 						Effect.fail(
 							new MistralOpenApiSpecMissMatchError({
-								message: "Response from server did not match expected schema: " + err.message,
+								message: "Response from server did not match expected schema:\n" + err.issue.toString(),
 								cause: err
 							})
 						))
@@ -417,49 +418,75 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 			})
 		}
 	})
-}) {}
+}) {
+	static Default = Layer.effect(FilesService, this.make)
+}
+class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
+	make: Effect.gen(function*() {
+		const client = yield* ClientCore
+		return {
+			process: Effect.fn(function*(request: OCRRequest, options?: ApiRequestOptions | undefined) {
+				yield* Effect.void
+				const body = encodeJSON("body", request, { explode: true })
+				const path = yield* pathToFuncOrDie("/v1/ocr")
+				const headers = Headers.fromInput({ "Content-Type": "application/json", Accept: "application/json" })
+				const requestSecurity = resolveGlobalSecurity({ apiKey: client.apiKey })
+				const httpRequest = yield* client.buildRequest({
+					config: {
+						security: requestSecurity,
+						method: "POST",
+						baseURL: options?.serverURL,
+						path,
+						headers,
+						body: yield* HttpBody.json(body)
+					},
+					options
+				})
+				const response = yield* client.sendRequest(httpRequest, {
+					errorCodes: [422, "4XX", "5XX"],
+					retryConfig: remapRetryConfigFromOptions(options)
+				})
+				const parsed = yield* response.json.pipe(
+					Schema.decodeUnknownEffect(OCRResponse$inboundSchema)
+				)
+				return parsed as OCRResponse
+			})
+		}
+	})
+}) {
+	static Default = Layer.effect(OcrService, this.make)
+}
+
 class MistralBaseClient extends ServiceMap.Service<MistralBaseClient>()("MistralBaseClient", {
 	make: Effect.gen(function*() {
 		return {
-			files: yield* FilesService
+			files: yield* FilesService,
+			ocr: yield* OcrService
 		}
 	})
-}) {}
+}) {
+	static Default = Layer.effect(MistralBaseClient, this.make)
+	static Live = (config: MistralClientConfig) =>
+		this.Default.pipe(
+			Layer.provide(
+				Layer.mergeAll(FilesService.Default, OcrService.Default)
+			),
+			Layer.provide(Layer.effect(ClientCore, ClientCore.make(config)))
+		)
+}
 
 export class MistralOcrClient extends ServiceMap.Service<MistralOcrClient>()("MistralOcrClient", {
 	make: Effect.gen(function*() {
-		const clientConfig = yield* MistralClientConfig
-		const client = new Mistral({ apiKey: clientConfig.apiKey })
-
+		const client = yield* MistralBaseClient
 		return {
-			uploadFile: Effect.fn(function*(file: MultiPartBodyParams) {
-				return yield* Effect.tryPromise<CreateFileResponse, MistralError>({
-					try: () => client.files.upload(file),
-					catch: (err) =>
-						new MistralError({
-							message: "Failed to upload file",
-							cause: err
-						})
-				})
-			}),
-			processDocument: Effect.fn(
-				function*(args: Omit<OCRRequest, "model">) {
-					return yield* Effect.tryPromise<OCRResponse, MistralError>({
-						try: () =>
-							client.ocr.process({
-								...args,
-								model: models.OCR2
-							}),
-						catch: (err) =>
-							new MistralError({
-								message: "Failed to process document",
-								cause: err
-							})
-					})
-				}
-			)
+			uploadFile: client.files.upload,
+			processDocument: (args: Omit<OCRRequest, "model">) => client.ocr.process({ ...args, model: models.OCR2 })
 		}
 	})
 }) {
 	static Default = Layer.effect(MistralOcrClient, this.make)
+	static Live = (config: MistralClientConfig) =>
+		this.Default.pipe(
+			Layer.provide(MistralBaseClient.Live(config))
+		)
 }
