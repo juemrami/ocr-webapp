@@ -7,6 +7,9 @@ import { analyzer } from "vite-bundle-analyzer"
 import solidPlugin from "vite-plugin-solid"
 
 export default defineConfig({
+	optimizeDeps: {
+		include: ["extend"]
+	},
 	plugins: [
 		analyzer({
 			analyzerPort: 7272

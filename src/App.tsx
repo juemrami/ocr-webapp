@@ -1,4 +1,6 @@
 import { Effect, Exit } from "effect"
+import { micromark } from "micromark"
+import { math, mathHtml } from "micromark-extension-math"
 import type { Component, JSX } from "solid-js"
 import { createSignal, onCleanup } from "solid-js"
 import { Eye, EyeOff } from "./components/icons.tsx"
@@ -9,7 +11,6 @@ import { MistralOcrClient } from "./modules/mistral.ts"
 import { mistralApiKeyAtom, mistralEncryptedKeyAtom, useAtom } from "./modules/reactivity.ts"
 
 const App: Component = () => {
-	const [markdownText, setMarkdownText] = createSignal("")
 	const [uploadedFile, setuploadedFile] = createSignal<File | null>(null)
 	const [mistralApiKeyConfig, setMistralApiKeyConfig] = useAtom(mistralApiKeyAtom)
 	const [mistralEncryptedKey, setMistralEncryptedKey] = useAtom(mistralEncryptedKeyAtom)
@@ -19,7 +20,6 @@ const App: Component = () => {
 		if (!file) return
 		setuploadedFile(file)
 	}
-
 	const onDoOcr = async () => {
 		const uploaded = uploadedFile()
 		const keyConfig = mistralApiKeyConfig()
@@ -60,7 +60,28 @@ const App: Component = () => {
 			onFailure: (cause) => {
 				cause.reasons.map((r) => console.error(r))
 			},
-			onSuccess: (markdown) => setMarkdownText(markdown)
+			onSuccess: (markdown) => {
+				if (markdownPreviewRef) {
+					markdownPreviewRef.innerHTML = ""
+					if (markdown) {
+						// target convert embedded base64 images to avoid using useDangerousProtocol in micromark
+						markdown = markdown.replace(
+							/!\[([^\]]*)\]\(\s*(data:image\/(?:png|jpeg|jpg|gif|svg\+xml);base64,[^)]+)\s*(?:"[^"]*")?\s*\)/gi,
+							(_m, alt, src) => `<img src="${src}" alt="${alt || ""}" />`
+						)
+						const html = micromark(
+							markdown,
+							{
+								// required options for rendering inline img tags
+								allowDangerousHtml: true,
+								extensions: [math()],
+								htmlExtensions: [mathHtml()]
+							}
+						)
+						markdownPreviewRef.innerHTML = html
+					}
+				}
+			}
 		})
 	}
 
@@ -144,6 +165,7 @@ const App: Component = () => {
 	let fileInput: HTMLInputElement | undefined
 	let rememberAnchorEl: HTMLElement | undefined
 	let startButtonAnchorEl: HTMLElement | undefined
+	let markdownPreviewRef: HTMLDivElement | undefined
 
 	return (
 		<div class="app-container min-h-screen p-6 bg-slate-100 text-slate-900">
@@ -154,9 +176,9 @@ const App: Component = () => {
 
 			{/* <DebugMistralApiKeyConfig /> */}
 
-			<div class="grid grid-cols-1 gap-6">
-				<section class="markdown-area rounded-xl bg-white p-6 shadow-sm">
-					<div class="flex items-end justify-between gap-4 mb-1">
+			<div class="flex flex-col">
+				<section class="markdown-area rounded-xl bg-white px-6 py-3 shadow-sm">
+					<div class="flex items-end justify-between gap-4">
 						<h2 class="heading text-xl font-semibold">Output</h2>
 						<div class="inline-flex flex-col items-end gap-1">
 							<div class="w-full mb-2 flex items-center gap-2 justify-end">
@@ -322,18 +344,10 @@ const App: Component = () => {
 							</div>
 						</div>
 					</div>
-					<div>
-						<textarea
-							rows={10}
-							readOnly={true}
-							value={markdownText()}
-							placeholder="Markdown source text will appear here"
-							class="textarea-output w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm"
-							style={{ resize: "none" }}
-						/>
-						<div class="markdown-preview rounded-lg border border-slate-200 bg-slate-50 p-3 mt-4 max-h-48 overflow-auto">
-							<pre class="whitespace-pre-wrap text-xs text-slate-800">{markdownText()}</pre>
-						</div>
+					<div
+						class="prose prose-slate rounded-lg border border-slate-200 bg-slate-50 p-3 max-h-full min-w-full mt-2"
+						ref={(el) => (markdownPreviewRef = el)}
+					>
 					</div>
 				</section>
 			</div>
