@@ -6,8 +6,8 @@ const SampleType$inboundSchema = Schema.Enum(
 		Instruct: "instruct",
 		BatchRequest: "batch_request",
 		BatchResult: "batch_result",
-		BatchError: "batch_error"
-		// OcrInput: "ocr_input"
+		BatchError: "batch_error",
+		OcrInput: "ocr_input"
 	} as const
 )
 const FilePurpose$inboundSchema = Schema.Enum(

@@ -25,6 +25,7 @@ export default defineConfig({
 		target: "esnext"
 	},
 	test: {
+		setupFiles: "./tests/setup.ts",
 		include: ["tests/**/*.{test,spec}.{ts,tsx}"]
 	}
 })

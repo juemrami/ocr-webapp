@@ -16,7 +16,7 @@ import { getOrElse } from "effect/Option"
 import { Headers, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import type { HttpMethod } from "effect/unstable/http/HttpMethod"
 import { appendFormDataValue } from "./mistral-http-client/http-utils"
-import { CreateFileResponse$inboundSchema, OCRResponse$inboundSchema } from "./mistral-http-client/schemas"
+import { CreateFileResponse$inboundSchema, OCRResponse$inboundSchema } from "./mistral-http-client/schemas/inbound"
 
 const models = {
 	OCR1: "mistral-ocr-2503",
@@ -344,14 +344,47 @@ const pathToFuncOrDie = (path: string) =>
 		}
 	})
 const transientErrorStatusCodes: StatusCode[] = [429, 500, 502, 503, 504]
+export const logFile = (file: File | Blob) => {
+	try {
+		const entry = file
+		console.log("--- File entry diagnostics ---")
+		console.log("typeof:", typeof entry)
+		console.log("instanceof Blob:", entry instanceof Blob)
+		console.log(
+			"constructor name:",
+			entry && (entry as any).constructor ? (entry as any).constructor.name : undefined
+		)
+		console.log("toString:", Object.prototype.toString.call(entry))
+		if (entry && typeof (entry as any).name !== "undefined") {
+			console.log("entry.name:", (entry as any).name)
+		}
+		if (entry && typeof (entry as any).size !== "undefined") {
+			console.log("entry.size:", (entry as any).size)
+		}
+		if (entry && typeof (entry as any).type !== "undefined") {
+			console.log("entry.type:", (entry as any).type)
+		}
+		if (entry && typeof (entry as any).arrayBuffer === "function") {
+			console.log("has arrayBuffer()")
+			console.log("array buffer contents", (entry as any).arrayBuffer())
+		}
+		if (entry && typeof (entry as any).stream === "function") {
+			console.log("has stream()")
+		}
+		console.log("--- end diagnostics ---")
+	} catch (err) {
+		console.log("Error while inspecting FormData file entry:", err)
+	}
+}
 
 const fileParamIsFileT = (u: MultiPartBodyParams["file"]): u is FileT => "fileName" in u || "content" in u
+export const isNodeBuffer = (u: unknown): u is Uint8Array<ArrayBuffer> =>
+	// @ts-ignore
+	typeof Buffer !== "undefined" && Buffer.isBuffer(u) && "buffer" in u && "byteLength" in u && "byteOffset" in u
 export const httpBodyFromMultiPartBodyParams = Effect.fn(function*(request: MultiPartBodyParams) {
 	const body = HttpBody.formData(new FormData())
 	if (fileParamIsFileT(request.file)) {
 		const filename = request.file.fileName
-		// const rawContent = request.file.content
-		console.log("Appending file to form data body as ArrayBuffer")
 		const contentType = getContentTypeFromFileName(filename)
 			|| "application/octet-stream"
 		const content = yield* pipe(
@@ -373,7 +406,16 @@ export const httpBodyFromMultiPartBodyParams = Effect.fn(function*(request: Mult
 						)
 				),
 				Match.when(
-					(u): u is Uint8Array => u instanceof Uint8Array,
+					// Node Buffer instances are subclasses of Uint8Array. https://github.com/mistralai/client-ts/issues/180
+					isNodeBuffer,
+					(buf) => {
+						const bytes = new Uint8Array(buf.byteLength)
+						for (let i = 0; i < buf.byteLength; i++) bytes[i] = buf[i + buf.byteOffset]
+						return new Blob([bytes], { type: contentType })
+					}
+				),
+				Match.when(
+					(u): u is Uint8Array => u instanceof Uint8Array || ArrayBuffer.isView(u),
 					(u8) => new Blob([new Uint8Array(u8)], { type: contentType })
 				),
 				Match.when(
@@ -388,14 +430,8 @@ export const httpBodyFromMultiPartBodyParams = Effect.fn(function*(request: Mult
 			),
 			(result) => isEffect(result) ? result : Effect.succeed(result)
 		)
-		console.log("Constructed Blob-like object for file upload:", content)
-		console.log("isBlobLike check for content object:", isBlobLike(content))
-		console.log("instance of Blob:", content instanceof Blob)
-		console.log("instance of ArrayBuffer:", content instanceof ArrayBuffer)
-		console.log("instance of Array:", Array.isArray(content))
 		appendFormDataValue(body, "file", content, filename)
 	} else {
-		console.log("Appending file to form data body unnamed as Blob")
 		appendFormDataValue(body, "file", request.file)
 	}
 	if (request.expiry !== undefined) {
@@ -420,40 +456,6 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 				const path = yield* pathToFuncOrDie("/v1/files")
 				const headers = Headers.fromInput({ Accept: "application/json" })
 				const requestSecurity = resolveGlobalSecurity({ apiKey: client.apiKey })
-				console.log("Form data body constructed for file upload request:")
-				console.dir(Object.fromEntries(body.formData.entries()), { depth: null, colors: true })
-				// Diagnostic: inspect the `file` entry closely to understand why filename/Blob
-				// information might be lost when passed to `appendForm`.
-				try {
-					const entry = body.formData.get("file")
-					console.log("--- FormData 'file' entry diagnostics ---")
-					console.log("typeof:", typeof entry)
-					console.log("instanceof Blob:", entry instanceof Blob)
-					console.log(
-						"constructor name:",
-						entry && (entry as any).constructor ? (entry as any).constructor.name : undefined
-					)
-					console.log("toString:", Object.prototype.toString.call(entry))
-					if (entry && typeof (entry as any).name !== "undefined") {
-						console.log("entry.name:", (entry as any).name)
-					}
-					if (entry && typeof (entry as any).size !== "undefined") {
-						console.log("entry.size:", (entry as any).size)
-					}
-					if (entry && typeof (entry as any).type !== "undefined") {
-						console.log("entry.type:", (entry as any).type)
-					}
-					if (entry && typeof (entry as any).arrayBuffer === "function") {
-						console.log("has arrayBuffer()")
-					}
-					if (entry && typeof (entry as any).stream === "function") {
-						console.log("has stream()")
-					}
-					console.log("--- end diagnostics ---")
-				} catch (err) {
-					console.log("Error while inspecting FormData file entry:", err)
-				}
-				console.log("Built HttpBody for file upload request:", body)
 				const httpRequest = yield* client.buildRequest({
 					config: {
 						security: requestSecurity,

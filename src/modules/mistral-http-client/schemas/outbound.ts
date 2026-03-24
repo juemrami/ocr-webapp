@@ -34,7 +34,7 @@ const FileT$outboundSchema = Schema.Struct({
 	])
 })
 
-function isBlobLike(val: unknown): val is Blob {
+export function isBlobLike(val: unknown): val is Blob {
 	if (val instanceof Blob) {
 		return true
 	}

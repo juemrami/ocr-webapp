@@ -1,10 +1,10 @@
 import { NodeFileSystem, NodeHttpClient } from "@effect/platform-node"
 import { describe, expect, it } from "@effect/vitest"
-import { isBlobLike } from "@mistralai/mistralai/types"
 import { isReadableStream } from "@mistralai/mistralai/types/streams.js"
 import { Effect, FileSystem, Layer, pipe } from "effect"
 import { TracerPropagationEnabled } from "effect/unstable/http/HttpClient"
-import { httpBodyFromMultiPartBodyParams, MistralOcrClient } from "../src/modules/mistral-ocr"
+import { isBlobLike } from "../src/modules/mistral-http-client/schemas/outbound"
+import { httpBodyFromMultiPartBodyParams, isNodeBuffer, MistralOcrClient } from "../src/modules/mistral-ocr"
 
 const httpClientLayer = NodeHttpClient.layerFetch.pipe(
 	Layer.provide(Layer.succeed(TracerPropagationEnabled, false))
@@ -109,23 +109,36 @@ describe("mistral ocr integration (optional)", () => {
 		})
 	})
 
+	it.effect("reads png from disk and passes buffer as file.content", () =>
+		Effect.gen(function*() {
+			const demoPng = __dirname + "/../demos/screen-shot.png"
+			const fs = yield* FileSystem.FileSystem
+			const buffer = yield* fs.readFile(demoPng)
+			console.log("type:", buffer[Symbol.toStringTag], "length:", buffer.length)
+			const body = yield* httpBodyFromMultiPartBodyParams(
+				{ file: { fileName: "screen-shot.png", content: buffer } }
+			)
+			expect(body).toBeDefined()
+		}).pipe(
+			Effect.provide(NodeFileSystem.layer)
+		))
+
 	it.effect(
 		"uploads and parses screen-shot.png",
 		() =>
 			Effect.gen(function*() {
 				const fs = yield* FileSystem.FileSystem
 				const buffer = yield* fs.readFile(demoPngUrl)
+				expect(isNodeBuffer(buffer)).toBe(true)
 				const client = yield* MistralOcrClient
+				console.log("Read file buffer, length:", buffer.length, "type:", buffer[Symbol.toStringTag])
 				const uploaded = yield* pipe(
 					client.uploadFile({
-						file: {
-							fileName: "screen-shot.png",
-							content: buffer
-						},
+						file: new File([new Uint8Array(buffer)], "screen-shot.png", { type: "image/png" }),
 						purpose: "ocr"
 					})
-					// Effect.andThen(identity)
 				)
+				console.log("Uploaded file ID:", uploaded.id)
 				const processed = yield* client.processDocument({
 					document: { fileId: uploaded.id },
 					includeImageBase64: true

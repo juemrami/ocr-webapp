@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { CreateFileResponse$inboundSchema } from "../src/modules/mistral-http-client/schemas"
+import { CreateFileResponse$inboundSchema } from "../src/modules/mistral-http-client/schemas/inbound"
 
 describe("mistral schemas", () => {
 	it("decode and encode correctly", () => {
