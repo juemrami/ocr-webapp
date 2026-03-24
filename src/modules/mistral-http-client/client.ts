@@ -132,14 +132,20 @@ export interface ApiRequestOptions extends RequestOptions {
 	headers?: Headers.Headers
 	errorCodes?: Array<StatusCode>
 }
-export type MistralClientConfig = {
-	apiKey?: string | Effect.Effect<string> | undefined
-	serverURL?: string | undefined
-	userAgent?: string | undefined
-	retryConfig?: RetryConfig | undefined
+export class MistralClientConfig extends ServiceMap.Service<MistralClientConfig>()("MistralClientConfig", {
+	make: Effect.sync(() => ({
+		apiKey: undefined as string | Effect.Effect<string> | undefined,
+		serverURL: undefined as string | undefined,
+		userAgent: undefined as string | undefined,
+		retryConfig: undefined as RetryConfig | undefined
+	}))
+}) {
+	static Empty = Layer.effect(MistralClientConfig, this.make)
+	static Live = (config: Effect.Success<typeof this.make>) => Layer.succeed(this, config)
 }
 class ClientCore extends ServiceMap.Service<ClientCore>()("ClientCore", {
-	make: Effect.fn(function*(args: MistralClientConfig) {
+	make: Effect.gen(function*() {
+		const args = yield* MistralClientConfig
 		const baseUrl = args.serverURL !== undefined ? args.serverURL : "https://api.mistral.ai"
 		const validBaseUrl = yield* Effect.try({
 			try: () => pathToFunc(baseUrl)({}),
@@ -343,7 +349,10 @@ class ClientCore extends ServiceMap.Service<ClientCore>()("ClientCore", {
 			})
 		}
 	})
-}) {}
+}) {
+	static Base = Layer.effect(ClientCore, this.make)
+	static EmptyConfig = Layer.provide(this.Base, MistralClientConfig.Empty)
+}
 const pathToFuncOrDie = (path: string) =>
 	Effect.try({
 		try: () => pathToFunc(path)(),
@@ -520,7 +529,7 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 		}
 	})
 }) {
-	static Default = Layer.effect(FilesService, this.make)
+	static Base = Layer.effect(FilesService, this.make)
 }
 class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 	make: Effect.gen(function*() {
@@ -553,7 +562,7 @@ class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 		}
 	})
 }) {
-	static Default = Layer.effect(OcrService, this.make)
+	static Base = Layer.effect(OcrService, this.make)
 }
 
 export class MistralBaseClient extends ServiceMap.Service<MistralBaseClient>()("MistralBaseClient", {
@@ -564,12 +573,14 @@ export class MistralBaseClient extends ServiceMap.Service<MistralBaseClient>()("
 		}
 	})
 }) {
-	static Default = Layer.effect(MistralBaseClient, this.make)
-	static Live = (config: MistralClientConfig) =>
-		this.Default.pipe(
-			Layer.provide(
-				Layer.mergeAll(FilesService.Default, OcrService.Default)
-			),
-			Layer.provide(Layer.effect(ClientCore, ClientCore.make(config)))
+	static Base = Layer.effect(MistralBaseClient, this.make)
+	static Default = Layer.provide(
+		this.Base,
+		Layer.provideMerge(
+			Layer.mergeAll(FilesService.Base, OcrService.Base),
+			ClientCore.Base
 		)
+	)
+	static Live = (config: Effect.Success<typeof MistralClientConfig.make>) =>
+		Layer.provide(this.Default, MistralClientConfig.Live(config))
 }

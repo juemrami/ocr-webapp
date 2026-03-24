@@ -1,4 +1,5 @@
-import { Option, pipe } from "effect"
+import { Cause, Effect, Exit, Option, pipe } from "effect"
+import type { AsyncResult } from "effect/unstable/reactivity"
 import { Atom, AtomRegistry } from "effect/unstable/reactivity"
 import { createSignal, onCleanup, type Setter } from "solid-js"
 import { decryptApiKey, type EncryptedKeyStruct } from "./encryption"
@@ -92,6 +93,42 @@ export const mistralApiKeyAtom = Atom.writable((ctx) => {
 		ctx.setSelf(next)
 	}
 })
+
+const flattenExit = <A, E>(exit: Exit.Exit<A, E>): A => {
+	if (Exit.isSuccess(exit)) return exit.value
+	throw Cause.squash(exit.cause)
+}
+
+export const useAtomSet = <R, W, Mode extends "value" | "promise" | "promiseExit" = never>(
+	atom: Atom.Writable<R, W>,
+	options?: {
+		readonly mode?: ([R] extends [AsyncResult.AsyncResult<any, any>] ? Mode : "value") | undefined
+	}
+): "promise" extends Mode ? (
+		(value: W) => Promise<AsyncResult.AsyncResult.Success<R>>
+	) :
+	"promiseExit" extends Mode ? (
+			(value: W) => Promise<Exit.Exit<AsyncResult.AsyncResult.Success<R>, AsyncResult.AsyncResult.Failure<R>>>
+		) :
+	((value: W | ((value: R) => W)) => void) =>
+{
+	onCleanup(appRegistry.mount(atom))
+	if (options?.mode === "promise" || options?.mode === "promiseExit") {
+		return ((value: W) => {
+			appRegistry.set(atom, value)
+			const promise = Effect.runPromiseExit(
+				AtomRegistry.getResult(appRegistry, atom as Atom.Atom<AsyncResult.AsyncResult<any, any>>, {
+					suspendOnWaiting: true
+				})
+			)
+			return options!.mode === "promise" ? promise.then(flattenExit) : promise
+		}) as any
+	}
+	return ((value: W | ((value: R) => W)) => {
+		appRegistry.set(atom, typeof value === "function" ? (value as any)(appRegistry.get(atom)) : value)
+	}) as any
+}
+
 export const useAtom = <R, W = R>(atom: Atom.Writable<R, W>) => {
 	const value = useAtomValue(atom)
 	appRegistry.mount(atom)

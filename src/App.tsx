@@ -1,19 +1,22 @@
-import { Effect, Exit } from "effect"
+import { identity, Match } from "effect"
+import { AsyncResult } from "effect/unstable/reactivity"
 import { micromark } from "micromark"
 import { math, mathHtml } from "micromark-extension-math"
 import type { Component, JSX } from "solid-js"
-import { createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
+import { effect } from "solid-js/web"
 import { Eye, EyeOff } from "./components/icons.tsx"
 import { Popover, PopoverAnchor, PopoverContent } from "./components/ui/popover.tsx"
-import { parseFile } from "./index.ts"
+import { makeParseFileAtom } from "./index.ts"
 import { decryptApiKey, encryptApiKey } from "./modules/encryption.ts"
-import { MistralOcrClient } from "./modules/mistral.ts"
-import { mistralApiKeyAtom, mistralEncryptedKeyAtom, useAtom } from "./modules/reactivity.ts"
+import { mistralApiKeyAtom, mistralEncryptedKeyAtom, useAtom, useAtomSet, useAtomValue } from "./modules/reactivity.ts"
 
 const App: Component = () => {
 	const [uploadedFile, setuploadedFile] = createSignal<File | null>(null)
 	const [mistralApiKeyConfig, setMistralApiKeyConfig] = useAtom(mistralApiKeyAtom)
 	const [mistralEncryptedKey, setMistralEncryptedKey] = useAtom(mistralEncryptedKeyAtom)
+	const parseFile = useAtomSet(makeParseFileAtom)
+	const parseFileState = useAtomValue(makeParseFileAtom)
 
 	const onFileChange: JSX.EventHandler<HTMLInputElement, Event> = async (e) => {
 		const file = e.currentTarget.files?.[0]
@@ -46,45 +49,46 @@ const App: Component = () => {
 			setMistralApiKeyConfig({ sessionPassphrase: null })
 			return
 		}
-		const result = await Effect.runPromiseExit(
-			parseFile({
-				fileName: uploaded.name,
-				content: uploaded
-			}).pipe(
-				Effect.provide(MistralOcrClient.Live({
-					apiKey
-				}))
-			)
-		)
-		Exit.match(result, {
-			onFailure: (cause) => {
-				cause.reasons.map((r) => console.error(r))
-			},
-			onSuccess: (markdown) => {
-				if (markdownPreviewRef) {
-					markdownPreviewRef.innerHTML = ""
-					if (markdown) {
-						// target convert embedded base64 images to avoid using useDangerousProtocol in micromark
-						markdown = markdown.replace(
-							/!\[([^\]]*)\]\(\s*(data:image\/(?:png|jpeg|jpg|gif|svg\+xml);base64,[^)]+)\s*(?:"[^"]*")?\s*\)/gi,
-							(_m, alt, src) => `<img src="${src}" alt="${alt || ""}" />`
-						)
-						const html = micromark(
-							markdown,
-							{
-								// required options for rendering inline img tags
-								allowDangerousHtml: true,
-								extensions: [math()],
-								htmlExtensions: [mathHtml()]
-							}
-						)
-						markdownPreviewRef.innerHTML = html
-					}
-				}
-			}
+		parseFile({
+			fileName: uploaded.name,
+			content: uploaded
 		})
 	}
-
+	createEffect(async () => {
+		AsyncResult.match(parseFileState(), {
+			onInitial: identity,
+			onFailure: ({ cause }) => {
+				cause.reasons.map((r) => console.error(r))
+			},
+			onSuccess: ({ value }) => {
+				Match.type<typeof value>().pipe(
+					Match.when((s) => s.phase === "complete", ({ markdown }) => {
+						if (markdownPreviewRef) {
+							markdownPreviewRef.innerHTML = ""
+							if (value) {
+								// target convert embedded base64 images to avoid using useDangerousProtocol in micromark
+								markdown = markdown.replace(
+									/!\[([^\]]*)\]\(\s*(data:image\/(?:png|jpeg|jpg|gif|svg\+xml);base64,[^)]+)\s*(?:"[^"]*")?\s*\)/gi,
+									(_m, alt, src) => `<img src="${src}" alt="${alt || ""}" />`
+								)
+								const html = micromark(
+									markdown,
+									{
+										// required options for rendering inline img tags
+										allowDangerousHtml: true,
+										extensions: [math()],
+										htmlExtensions: [mathHtml()]
+									}
+								)
+								markdownPreviewRef.innerHTML = html
+							}
+						}
+					}),
+					Match.orElse(identity)
+				)(value)
+			}
+		})
+	})
 	const [showApiKey, setShowApiKey] = createSignal(false)
 	const [rememberDialogPending, setRememberDialogPending] = createSignal(false)
 	const [rememberPopoverOpen, setRememberPopoverOpen] = createSignal(false)
@@ -343,6 +347,21 @@ const App: Component = () => {
 								</div>
 							</div>
 						</div>
+					</div>
+					<div class="mt-1 text-sm text-slate-500">
+						State: {AsyncResult.match(parseFileState(), {
+							onInitial: () => "idle",
+							onFailure: () => "error",
+							onSuccess: ({ value }) =>
+								Match.type<typeof value>().pipe(
+									Match.when((s) => s.phase === "idle", () => "idle"),
+									Match.when((s) => s.phase === "uploading", () => "uploading"),
+									Match.when((s) => s.phase === "complete", () => "complete"),
+									Match.when((s) => s.phase === "ocr-processing", () => "processing"),
+									Match.when((s) => s.phase === "post-processing", () => "processing"),
+									Match.orElse(() => "unknown status")
+								)(value)
+						})}
 					</div>
 					<div
 						class="prose prose-slate rounded-lg border border-slate-200 bg-slate-50 p-3 max-h-full min-w-full mt-2"

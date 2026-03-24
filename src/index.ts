@@ -1,9 +1,13 @@
 import type { FileT } from "@mistralai/mistralai/models/components"
 import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpageobject.js"
-import { Console, Effect, Layer } from "effect"
+import { Console, Effect, Layer, pipe } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { TracerPropagationEnabled } from "effect/unstable/http/HttpClient"
+import { AsyncResult, Atom } from "effect/unstable/reactivity"
+import { decryptApiKey } from "./modules/encryption"
 import { MistralOcrClient } from "./modules/mistral"
+import { MistralClientConfig } from "./modules/mistral-http-client/client"
+import { mistralApiKeyAtom, mistralEncryptedKeyAtom } from "./modules/reactivity"
 
 /**
  * Replaces image references in markdown with base64 data URIs
@@ -46,41 +50,73 @@ function getCombinedMarkdown(pages: OCRPageObject[]): string {
 	return markdowns.join("\n\n")
 }
 
-export const parseFile = (file: FileT) =>
-	Effect.gen(function*() {
-		yield* Console.log("Starting Mistral OCR demo...")
-		const ocrClient = yield* MistralOcrClient
-		const fileSize = "byteLength" in file.content
-			? file.content.byteLength
-			: "length" in file.content
-			? file.content.length
-			: "size" in file.content
-			? file.content.size
-			: undefined
+type MistralClientConfigT = typeof MistralClientConfig.Service
+const AuthorizedMistralOcrClientRuntime = Atom.runtime((get) => {
+	const encryptedKey = get(mistralEncryptedKeyAtom)
+	const keyConfig = get(mistralApiKeyAtom)
+	let configLayer = MistralClientConfig.Empty
+	if (keyConfig.isEncrypted && encryptedKey && keyConfig.sessionPassphrase) {
+		configLayer = Layer.effect(
+			MistralClientConfig,
+			Effect.sync(function() {
+				const apiKey = pipe(
+					Effect.promise(() => decryptApiKey(keyConfig.sessionPassphrase!, encryptedKey!)),
+					Effect.map((d) => d === null ? "" : d)
+				)
+				return { apiKey } as MistralClientConfigT
+			})
+		)
+	}
 
-		yield* Console.log(`Read ${fileSize ?? "unknown"} bytes from disk: ${file.fileName}`)
-		yield* Console.log("Uploading file to Mistral OCR...")
-		const uploadedFile = yield* ocrClient.uploadFile({
-			file,
-			purpose: "ocr"
-		})
-		yield* Console.log(`File uploaded with ID: ${uploadedFile.id}`)
-		yield* Console.log("Processing document with Mistral OCR...")
-		const processed = yield* ocrClient.processDocument({
-			document: {
-				fileId: uploadedFile.id
-			},
-			includeImageBase64: true
-		})
-		yield* Console.log("Document processed. Extracting markdown with embedded images...")
-		// Get combined markdown with embedded images
-		const combinedMarkdown = getCombinedMarkdown(processed.pages)
-
-		// Log the result
-		return combinedMarkdown
-	}).pipe(
-		Effect.provide(Layer.provide(
-			FetchHttpClient.layer,
-			Layer.succeed(TracerPropagationEnabled, false) // cors issue with `traceparent` header, disable for now
-		))
+	return Layer.provide(
+		MistralOcrClient.Default,
+		configLayer
+	).pipe(
+		Layer.merge(
+			Layer.provide(FetchHttpClient.layer, Layer.succeed(TracerPropagationEnabled, false))
+		) // cors issue with `traceparent` header, disable for now
 	)
+})
+
+type FileProcessingState =
+	| { phase: "idle" }
+	| { phase: "uploading" }
+	| { phase: "ocr-processing"; fileId: string }
+	| { phase: "post-processing"; fileId: string }
+	| { phase: "complete"; markdown: string; fileId: string }
+export const makeParseFileAtom = AuthorizedMistralOcrClientRuntime.fn((file: FileT, ctx) => {
+	const setSelfEffect = (result: FileProcessingState) =>
+		Effect.sync(() => ctx.setSelf(AsyncResult.success(result)) ?? result)
+	const fn = Effect.gen(function*() {
+		const ocrClient = yield* MistralOcrClient
+		const [, uploadedFile] = yield* Effect.all(
+			[
+				setSelfEffect({ phase: "uploading" }),
+				ocrClient.uploadFile({
+					file,
+					purpose: "ocr"
+				})
+			]
+		)
+		const [, ocrResult] = yield* Effect.all([
+			setSelfEffect({ phase: "ocr-processing", fileId: uploadedFile.id }),
+			ocrClient.processDocument({
+				document: {
+					fileId: uploadedFile.id
+				},
+				includeImageBase64: true
+			})
+		])
+		yield* setSelfEffect(
+			{ phase: "post-processing", fileId: uploadedFile.id }
+		)
+		// Get combined markdown with embedded images
+		const combinedMarkdown = getCombinedMarkdown(ocrResult.pages)
+		return yield* setSelfEffect({
+			phase: "complete",
+			markdown: combinedMarkdown,
+			fileId: uploadedFile.id
+		})
+	})
+	return fn
+}, { initialValue: { phase: "idle" } })

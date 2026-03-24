@@ -11,8 +11,12 @@ export class MistralOcrClient extends ServiceMap.Service<MistralOcrClient>()("Mi
 		}
 	})
 }) {
-	static Default = Layer.effect(MistralOcrClient, this.make)
-	static Live = (config: MistralClientConfig) =>
+	static Base = Layer.effect(MistralOcrClient, this.make)
+	static Default = Layer.provide(
+		this.Base,
+		MistralBaseClient.Default
+	)
+	static Live = (config: Effect.Success<typeof MistralClientConfig.make>) =>
 		this.Default.pipe(
 			Layer.provide(MistralBaseClient.Live(config))
 		)
