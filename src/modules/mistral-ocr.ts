@@ -1,4 +1,3 @@
-// import { Mistral } from "@mistralai/mistralai"
 import { encodeForm, encodeJSON } from "@mistralai/mistralai/lib/encodings.js"
 import { getContentTypeFromFileName, readableStreamToArrayBuffer } from "@mistralai/mistralai/lib/files.js"
 import type { BackoffStrategy, RetryConfig } from "@mistralai/mistralai/lib/retries.js"
@@ -7,24 +6,25 @@ import { resolveGlobalSecurity, type SecurityState } from "@mistralai/mistralai/
 import { pathToFunc } from "@mistralai/mistralai/lib/url.js"
 import {
 	type CreateFileResponse,
+	CreateFileResponse$inboundSchema,
 	type FileT,
 	type OCRRequest,
 	OCRRequest$outboundSchema,
-	type OCRResponse
+	OCRResponse$inboundSchema
 } from "@mistralai/mistralai/models/components"
 import { SDKValidationError } from "@mistralai/mistralai/models/errors"
-import type { MultiPartBodyParams } from "@mistralai/mistralai/models/operations"
+import { type MultiPartBodyParams, MultiPartBodyParams$outboundSchema } from "@mistralai/mistralai/models/operations"
 import { isBlobLike } from "@mistralai/mistralai/types"
 import { isReadableStream } from "@mistralai/mistralai/types/streams.js"
-import { Data, Duration, Effect, identity, Layer, Match, pipe, Schedule, Schema, ServiceMap } from "effect"
+import type { Schema } from "effect"
+import { Data, Duration, Effect, identity, Layer, Match, pipe, Schedule, ServiceMap } from "effect"
 import { isEffect } from "effect/Effect"
 import { encodeBase64 } from "effect/Encoding"
 import { getOrElse } from "effect/Option"
 import { Headers, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import type { HttpMethod } from "effect/unstable/http/HttpMethod"
+import type * as z from "zod/v4"
 import { appendFormDataValue } from "./mistral-http-client/http-utils"
-import { CreateFileResponse$inboundSchema, OCRResponse$inboundSchema } from "./mistral-http-client/schemas/inbound"
-import { MultiPartBodyParams$outboundSchema } from "./mistral-http-client/schemas/outbound"
 
 const models = {
 	OCR1: "mistral-ocr-2503",
@@ -393,80 +393,101 @@ const fileParamIsFileT = (u: MultiPartBodyParams["file"]): u is FileT => "fileNa
 export const isNodeBuffer = (u: unknown): u is Uint8Array<ArrayBuffer> =>
 	// @ts-ignore
 	typeof Buffer !== "undefined" && Buffer.isBuffer(u) && "buffer" in u && "byteLength" in u && "byteOffset" in u
-export const httpBodyFromMultiPartBodyParams = Effect.fn(function*(request: MultiPartBodyParams) {
-	const body = HttpBody.formData(new FormData())
-	if (fileParamIsFileT(request.file)) {
-		const filename = request.file.fileName
-		const contentType = getContentTypeFromFileName(filename)
-			|| "application/octet-stream"
-		const content = yield* pipe(
-			request.file.content,
-			Match.type<typeof request.file.content>().pipe(
-				Match.when(
-					isReadableStream,
-					(stream) =>
-						pipe(
-							Effect.tryPromise(() => readableStreamToArrayBuffer(stream)),
-							Effect.catchTag("UnknownError", (err: TypeError) =>
-								Effect.fail(
-									new InvalidReadableStreamInFileContent({
-										message: "Failed to read content from provided ReadableStream",
-										cause: err
-									})
-								)),
-							Effect.map((buffer) => new Blob([buffer], { type: contentType }))
-						)
+export const httpBodyFromMultiPartBodyParams = Effect.fn(
+	function*(
+		request: z.infer<typeof MultiPartBodyParams$outboundSchema>
+	) {
+		const body = HttpBody.formData(new FormData())
+		if (fileParamIsFileT(request.file)) {
+			const filename = request.file.fileName
+			const contentType = getContentTypeFromFileName(filename)
+				|| "application/octet-stream"
+			const content = yield* pipe(
+				request.file.content,
+				Match.type<typeof request.file.content>().pipe(
+					Match.when(
+						isReadableStream,
+						(stream) =>
+							pipe(
+								Effect.tryPromise(() => readableStreamToArrayBuffer(stream)),
+								Effect.catchTag("UnknownError", (err: TypeError) =>
+									Effect.fail(
+										new InvalidReadableStreamInFileContent({
+											message: "Failed to read content from provided ReadableStream",
+											cause: err
+										})
+									)),
+								Effect.map((buffer) => new Blob([buffer], { type: contentType }))
+							)
+					),
+					Match.when(
+						// Node Buffer instances are subclasses of Uint8Array. https://github.com/mistralai/client-ts/issues/180
+						isNodeBuffer,
+						(buf) => {
+							const bytes = new Uint8Array(buf.byteLength)
+							for (let i = 0; i < buf.byteLength; i++) bytes[i] = buf[i + buf.byteOffset]
+							return new Blob([bytes], { type: contentType })
+						}
+					),
+					Match.when(
+						(u): u is Uint8Array => u instanceof Uint8Array || ArrayBuffer.isView(u),
+						(u8) => new Blob([new Uint8Array(u8)], { type: contentType })
+					),
+					Match.when(
+						(u): u is ArrayBuffer => u instanceof ArrayBuffer,
+						(ab) => new Blob([new Uint8Array(ab)], { type: contentType })
+					),
+					Match.when(
+						(u): u is Blob => isBlobLike(u),
+						(blob) => blob instanceof Blob ? blob : new Blob([blob], { type: contentType })
+					),
+					Match.exhaustive
 				),
-				Match.when(
-					// Node Buffer instances are subclasses of Uint8Array. https://github.com/mistralai/client-ts/issues/180
-					isNodeBuffer,
-					(buf) => {
-						const bytes = new Uint8Array(buf.byteLength)
-						for (let i = 0; i < buf.byteLength; i++) bytes[i] = buf[i + buf.byteOffset]
-						return new Blob([bytes], { type: contentType })
-					}
-				),
-				Match.when(
-					(u): u is Uint8Array => u instanceof Uint8Array || ArrayBuffer.isView(u),
-					(u8) => new Blob([new Uint8Array(u8)], { type: contentType })
-				),
-				Match.when(
-					(u): u is ArrayBuffer => u instanceof ArrayBuffer,
-					(ab) => new Blob([new Uint8Array(ab)], { type: contentType })
-				),
-				Match.when(
-					(u): u is Blob => isBlobLike(u),
-					(blob) => blob instanceof Blob ? blob : new Blob([blob], { type: contentType })
-				),
-				Match.exhaustive
-			),
-			(result) => isEffect(result) ? result : Effect.succeed(result)
-		)
-		appendFormDataValue(body, "file", content, filename)
-	} else {
-		appendFormDataValue(body, "file", request.file)
+				(result) => isEffect(result) ? result : Effect.succeed(result)
+			)
+			appendFormDataValue(body, "file", content, filename)
+		} else {
+			appendFormDataValue(body, "file", request.file)
+		}
+		if (request.expiry !== undefined) {
+			appendFormDataValue(body, "expiry", request.expiry)
+		}
+		if (request.purpose !== undefined) {
+			appendFormDataValue(body, "purpose", request.purpose)
+		}
+		if (request.visibility !== undefined) {
+			appendFormDataValue(body, "visibility", request.visibility)
+		}
+		return body
 	}
-	if (request.expiry !== undefined) {
-		appendFormDataValue(body, "expiry", request.expiry)
-	}
-	if (request.purpose !== undefined) {
-		appendFormDataValue(body, "purpose", request.purpose)
-	}
-	if (request.visibility !== undefined) {
-		appendFormDataValue(body, "visibility", request.visibility)
-	}
-	return body
-})
-
+)
+const zDecode = <Out, In>(
+	schema: z.ZodType<
+		Out,
+		In
+	>,
+	value: In
+): Effect.Effect<Out, MistralOpenApiSpecValidationError> =>
+	Effect.tryPromise({
+		try: () => schema.parseAsync(value),
+		catch: (err: unknown) => {
+			if (err instanceof SDKValidationError) {
+				return new MistralOpenApiSpecValidationError({
+					message: "Request object did not match expected schema:\n",
+					cause: err as any
+				})
+			} else throw err
+		}
+	})
 class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 	make: Effect.gen(function*() {
 		const client = yield* ClientCore
 		return {
 			upload: Effect.fn(function*(request: MultiPartBodyParams, options?: ApiRequestOptions | undefined) {
-				request = yield* Schema.decodeUnknownEffect(MultiPartBodyParams$outboundSchema)(request).pipe(
-					Effect.orDie
+				const body = yield* pipe(
+					zDecode(MultiPartBodyParams$outboundSchema, request),
+					Effect.andThen(httpBodyFromMultiPartBodyParams)
 				)
-				const body = yield* httpBodyFromMultiPartBodyParams(request)
 				const path = yield* pathToFuncOrDie("/v1/files")
 				const headers = Headers.fromInput({ Accept: "application/json" })
 				const requestSecurity = resolveGlobalSecurity({ apiKey: client.apiKey })
@@ -492,19 +513,10 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 						} :
 						undefined
 				})
-				const json = yield* response.json
-				return (yield* pipe(
-					json,
-					Schema.decodeUnknownEffect(CreateFileResponse$inboundSchema),
-					Effect.catchTag("SchemaError", (err) =>
-						Effect.fail(
-							new MistralOpenApiSpecMissMatchError({
-								message: "Response from server did not match expected schema:\n" + err.issue.toString(),
-								cause: err,
-								input: json
-							})
-						))
-				)) as CreateFileResponse
+				return yield* pipe(
+					response.json,
+					Effect.andThen((json) => zDecode(CreateFileResponse$inboundSchema, json))
+				)
 			})
 		}
 	})
@@ -516,22 +528,7 @@ class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 		const client = yield* ClientCore
 		return {
 			process: Effect.fn(function*(request: OCRRequest, options?: ApiRequestOptions | undefined) {
-				// @ts-ignore
-				request = yield* Effect.tryPromise({
-					try: () => OCRRequest$outboundSchema.parseAsync(request),
-					catch: (err: unknown) => {
-						if (err instanceof SDKValidationError) {
-							return Effect.fail(
-								new MistralOpenApiSpecValidationError({
-									message: "Request object did not match expected schema:\n",
-									cause: err as any
-								})
-							)
-						} else throw err
-					}
-				})
-
-				const body = encodeJSON("body", request, { explode: true })
+				const body = encodeJSON("body", yield* zDecode(OCRRequest$outboundSchema, request), { explode: true })
 				const path = yield* pathToFuncOrDie("/v1/ocr")
 				const headers = Headers.fromInput({ "Content-Type": "application/json", Accept: "application/json" })
 				const requestSecurity = resolveGlobalSecurity({ apiKey: client.apiKey })
@@ -550,10 +547,9 @@ class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 					errorCodes: [422, "4XX", "5XX"],
 					retryConfig: remapRetryConfigFromOptions(options)
 				})
-				const parsed = yield* response.json.pipe(
-					Schema.decodeUnknownEffect(OCRResponse$inboundSchema)
+				return yield* response.json.pipe(
+					Effect.andThen((json) => zDecode(OCRResponse$inboundSchema, json))
 				)
-				return parsed as OCRResponse
 			})
 		}
 	})

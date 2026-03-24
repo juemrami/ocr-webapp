@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import type { Component, JSX } from "solid-js"
 import { createSignal, onCleanup } from "solid-js"
 import { Eye, EyeOff } from "./components/icons.tsx"
@@ -46,7 +46,7 @@ const App: Component = () => {
 			setMistralApiKeyConfig({ sessionPassphrase: null })
 			return
 		}
-		const result = await Effect.runPromise(
+		const result = await Effect.runPromiseExit(
 			parseFile({
 				fileName: uploaded.name,
 				content: uploaded
@@ -56,7 +56,12 @@ const App: Component = () => {
 				}))
 			)
 		)
-		setMarkdownText(result)
+		Exit.match(result, {
+			onFailure: (cause) => {
+				cause.reasons.map((r) => console.error(r))
+			},
+			onSuccess: (markdown) => setMarkdownText(markdown)
+		})
 	}
 
 	const [showApiKey, setShowApiKey] = createSignal(false)

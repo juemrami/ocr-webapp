@@ -11,9 +11,6 @@ importers:
       '@effect/platform-browser':
         specifier: 4.0.0-beta.36
         version: 4.0.0-beta.36(effect@4.0.0-beta.36)
-      '@effect/platform-node':
-        specifier: 4.0.0-beta.37
-        version: 4.0.0-beta.37(effect@4.0.0-beta.36)(ioredis@5.10.1)
       '@kobalte/core':
         specifier: ^0.13.11
         version: 0.13.11(solid-js@1.9.11)
@@ -29,6 +26,9 @@ importers:
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       '@effect/eslint-plugin':
         specifier: ^0.3.2
@@ -36,6 +36,9 @@ importers:
       '@effect/language-service':
         specifier: ^0.40.1
         version: 0.40.1
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.37
+        version: 4.0.0-beta.37(effect@4.0.0-beta.36)(ioredis@5.10.1)
       '@effect/vitest':
         specifier: 4.0.0-beta.37
         version: 4.0.0-beta.37(effect@4.0.0-beta.36)(vitest@4.1.0(@types/node@25.5.0)(jsdom@29.0.1)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.2)))
@@ -2591,8 +2594,8 @@ packages:
     peerDependencies:
       zod: ^3.25 || ^4
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.3.6:
+    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
 snapshots:
 
@@ -3030,8 +3033,8 @@ snapshots:
   '@mistralai/mistralai@2.1.1':
     dependencies:
       ws: 8.20.0
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.1(zod@3.25.76)
+      zod: 4.3.6
+      zod-to-json-schema: 3.25.1(zod@4.3.6)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -5310,8 +5313,8 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod-to-json-schema@3.25.1(zod@3.25.76):
+  zod-to-json-schema@3.25.1(zod@4.3.6):
     dependencies:
-      zod: 3.25.76
+      zod: 4.3.6
 
-  zod@3.25.76: {}
+  zod@4.3.6: {}
