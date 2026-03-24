@@ -5,7 +5,6 @@ import type { RequestOptions } from "@mistralai/mistralai/lib/sdks.js"
 import { resolveGlobalSecurity, type SecurityState } from "@mistralai/mistralai/lib/security.js"
 import { pathToFunc } from "@mistralai/mistralai/lib/url.js"
 import {
-	type CreateFileResponse,
 	CreateFileResponse$inboundSchema,
 	type FileT,
 	type OCRRequest,
@@ -24,13 +23,13 @@ import { getOrElse } from "effect/Option"
 import { Headers, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import type { HttpMethod } from "effect/unstable/http/HttpMethod"
 import type * as z from "zod/v4"
-import { appendFormDataValue } from "./mistral-http-client/http-utils"
+import { appendFormDataValue } from "./http-utils"
 
-const models = {
+export const OCR_MODELS = {
 	OCR1: "mistral-ocr-2503",
 	OCR2: "mistral-ocr-2505",
 	OCR3: "mistral-ocr-2512"
-}
+} as const
 
 const gt: unknown = typeof globalThis === "undefined" ? null : globalThis
 const webWorkerLike = typeof gt === "object"
@@ -129,11 +128,11 @@ const remapRetryConfigFromOptions = (options?: RequestOptions) => {
 	)
 }
 
-interface ApiRequestOptions extends RequestOptions {
+export interface ApiRequestOptions extends RequestOptions {
 	headers?: Headers.Headers
 	errorCodes?: Array<StatusCode>
 }
-type MistralClientConfig = {
+export type MistralClientConfig = {
 	apiKey?: string | Effect.Effect<string> | undefined
 	serverURL?: string | undefined
 	userAgent?: string | undefined
@@ -557,7 +556,7 @@ class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 	static Default = Layer.effect(OcrService, this.make)
 }
 
-class MistralBaseClient extends ServiceMap.Service<MistralBaseClient>()("MistralBaseClient", {
+export class MistralBaseClient extends ServiceMap.Service<MistralBaseClient>()("MistralBaseClient", {
 	make: Effect.gen(function*() {
 		return {
 			files: yield* FilesService,
@@ -572,21 +571,5 @@ class MistralBaseClient extends ServiceMap.Service<MistralBaseClient>()("Mistral
 				Layer.mergeAll(FilesService.Default, OcrService.Default)
 			),
 			Layer.provide(Layer.effect(ClientCore, ClientCore.make(config)))
-		)
-}
-
-export class MistralOcrClient extends ServiceMap.Service<MistralOcrClient>()("MistralOcrClient", {
-	make: Effect.gen(function*() {
-		const client = yield* MistralBaseClient
-		return {
-			uploadFile: client.files.upload,
-			processDocument: (args: Omit<OCRRequest, "model">) => client.ocr.process({ ...args, model: models.OCR2 })
-		}
-	})
-}) {
-	static Default = Layer.effect(MistralOcrClient, this.make)
-	static Live = (config: MistralClientConfig) =>
-		this.Default.pipe(
-			Layer.provide(MistralBaseClient.Live(config))
 		)
 }

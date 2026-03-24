@@ -5,7 +5,7 @@ import { Eye, EyeOff } from "./components/icons.tsx"
 import { Popover, PopoverAnchor, PopoverContent } from "./components/ui/popover.tsx"
 import { parseFile } from "./index.ts"
 import { decryptApiKey, encryptApiKey } from "./modules/encryption.ts"
-import { MistralOcrClient } from "./modules/mistral-ocr.ts"
+import { MistralOcrClient } from "./modules/mistral.ts"
 import { mistralApiKeyAtom, mistralEncryptedKeyAtom, useAtom } from "./modules/reactivity.ts"
 
 const App: Component = () => {

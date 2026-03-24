@@ -3,7 +3,7 @@ import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpa
 import { Console, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { TracerPropagationEnabled } from "effect/unstable/http/HttpClient"
-import { MistralOcrClient } from "./modules/mistral-ocr"
+import { MistralOcrClient } from "./modules/mistral"
 
 /**
  * Replaces image references in markdown with base64 data URIs
