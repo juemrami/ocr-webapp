@@ -5,7 +5,14 @@ import type { BackoffStrategy, RetryConfig } from "@mistralai/mistralai/lib/retr
 import type { RequestOptions } from "@mistralai/mistralai/lib/sdks.js"
 import { resolveGlobalSecurity, type SecurityState } from "@mistralai/mistralai/lib/security.js"
 import { pathToFunc } from "@mistralai/mistralai/lib/url.js"
-import type { CreateFileResponse, FileT, OCRRequest, OCRResponse } from "@mistralai/mistralai/models/components"
+import {
+	type CreateFileResponse,
+	type FileT,
+	type OCRRequest,
+	OCRRequest$outboundSchema,
+	type OCRResponse
+} from "@mistralai/mistralai/models/components"
+import { SDKValidationError } from "@mistralai/mistralai/models/errors"
 import type { MultiPartBodyParams } from "@mistralai/mistralai/models/operations"
 import { isBlobLike } from "@mistralai/mistralai/types"
 import { isReadableStream } from "@mistralai/mistralai/types/streams.js"
@@ -17,6 +24,7 @@ import { Headers, HttpBody, HttpClient, HttpClientRequest } from "effect/unstabl
 import type { HttpMethod } from "effect/unstable/http/HttpMethod"
 import { appendFormDataValue } from "./mistral-http-client/http-utils"
 import { CreateFileResponse$inboundSchema, OCRResponse$inboundSchema } from "./mistral-http-client/schemas/inbound"
+import { MultiPartBodyParams$outboundSchema } from "./mistral-http-client/schemas/outbound"
 
 const models = {
 	OCR1: "mistral-ocr-2503",
@@ -64,6 +72,10 @@ export class InvalidReadableStreamInFileContent extends Data.TaggedError("Invali
 	readonly message: string
 	/** https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError */
 	readonly cause: TypeError
+}> {}
+export class MistralOpenApiSpecValidationError extends Data.TaggedError("MistralOpenApiSpecValidationError")<{
+	readonly message: string
+	readonly cause: typeof SDKValidationError
 }> {}
 
 const matchStatus = <R>(status: number, cases: {
@@ -451,7 +463,9 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 		const client = yield* ClientCore
 		return {
 			upload: Effect.fn(function*(request: MultiPartBodyParams, options?: ApiRequestOptions | undefined) {
-				// todo validate request params before making the call
+				request = yield* Schema.decodeUnknownEffect(MultiPartBodyParams$outboundSchema)(request).pipe(
+					Effect.orDie
+				)
 				const body = yield* httpBodyFromMultiPartBodyParams(request)
 				const path = yield* pathToFuncOrDie("/v1/files")
 				const headers = Headers.fromInput({ Accept: "application/json" })
@@ -490,7 +504,7 @@ class FilesService extends ServiceMap.Service<FilesService>()("FilesService", {
 								input: json
 							})
 						))
-				)) satisfies CreateFileResponse as CreateFileResponse
+				)) as CreateFileResponse
 			})
 		}
 	})
@@ -502,7 +516,21 @@ class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 		const client = yield* ClientCore
 		return {
 			process: Effect.fn(function*(request: OCRRequest, options?: ApiRequestOptions | undefined) {
-				yield* Effect.void
+				// @ts-ignore
+				request = yield* Effect.tryPromise({
+					try: () => OCRRequest$outboundSchema.parseAsync(request),
+					catch: (err: unknown) => {
+						if (err instanceof SDKValidationError) {
+							return Effect.fail(
+								new MistralOpenApiSpecValidationError({
+									message: "Request object did not match expected schema:\n",
+									cause: err as any
+								})
+							)
+						} else throw err
+					}
+				})
+
 				const body = encodeJSON("body", request, { explode: true })
 				const path = yield* pathToFuncOrDie("/v1/ocr")
 				const headers = Headers.fromInput({ "Content-Type": "application/json", Accept: "application/json" })
@@ -514,7 +542,7 @@ class OcrService extends ServiceMap.Service<OcrService>()("OcrService", {
 						baseURL: options?.serverURL,
 						path,
 						headers,
-						body: yield* HttpBody.json(body)
+						body: HttpBody.raw(body ?? "")
 					},
 					options
 				})

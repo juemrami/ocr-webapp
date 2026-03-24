@@ -64,3 +64,72 @@ export const MultiPartBodyParams$outboundSchema = Schema.Struct({
 	purpose: Schema.optional(FilePurpose$outboundSchema),
 	file: Schema.Union([FileT$outboundSchema, BlobLikeSchema])
 })
+
+// --- Child schemas used by OCRRequest
+export const TableFormat$outboundSchema = Schema.Enum({ Markdown: "markdown", Html: "html" } as const)
+
+export const ImageDetail$outboundSchema = Schema.Enum({ Low: "low", Auto: "auto", High: "high" } as const)
+
+export const JsonSchema$outboundSchema = Schema.Struct({
+	name: Schema.String,
+	description: Schema.optional(Schema.NullOr(Schema.String)),
+	schemaDefinition: Schema.Record(Schema.String, Schema.Json),
+	strict: Schema.optional(Schema.Boolean)
+}).pipe(Schema.encodeKeys({ schemaDefinition: "schema" }))
+
+export const ResponseFormats$outboundSchema = Schema.Enum(
+	{ Text: "text", JsonObject: "json_object", JsonSchema: "json_schema" } as const
+)
+
+export const ResponseFormat$outboundSchema = Schema.Struct({
+	type: Schema.optional(ResponseFormats$outboundSchema),
+	jsonSchema: Schema.optional(Schema.NullOr(JsonSchema$outboundSchema))
+}).pipe(Schema.encodeKeys({ jsonSchema: "json_schema" }))
+
+export const FileChunk$outboundSchema = Schema.Struct({
+	type: Schema.String.pipe(Schema.withDecodingDefault(() => "file")),
+	fileId: Schema.String
+}).pipe(Schema.encodeKeys({ fileId: "file_id" }))
+
+export const DocumentURLChunk$outboundSchema = Schema.Struct({
+	type: Schema.String.pipe(Schema.withDecodingDefault(() => "document_url")),
+	documentUrl: Schema.String,
+	documentName: Schema.optional(Schema.NullOr(Schema.String))
+}).pipe(Schema.encodeKeys({ documentUrl: "document_url", documentName: "document_name" }))
+
+export const ImageURL$outboundSchema = Schema.Struct({
+	url: Schema.String,
+	detail: Schema.optional(Schema.NullOr(ImageDetail$outboundSchema))
+})
+
+export const ImageURLChunk$outboundSchema = Schema.Struct({
+	type: Schema.String.pipe(Schema.withDecodingDefault(() => "image_url")),
+	imageUrl: Schema.Union([ImageURL$outboundSchema, Schema.String])
+}).pipe(Schema.encodeKeys({ imageUrl: "image_url" }))
+
+// --- OCRRequest outbound schema (effect-smol Schema)
+export const OCRRequest$outboundSchema = Schema.Struct({
+	model: Schema.NullOr(Schema.String),
+	id: Schema.optional(Schema.String),
+	document: Schema.Union([FileChunk$outboundSchema, DocumentURLChunk$outboundSchema, ImageURLChunk$outboundSchema]),
+	pages: Schema.optional(Schema.NullOr(Schema.Array(Schema.Int))),
+	includeImageBase64: Schema.optional(Schema.NullOr(Schema.Boolean)),
+	imageLimit: Schema.optional(Schema.NullOr(Schema.Int)),
+	imageMinSize: Schema.optional(Schema.NullOr(Schema.Int)),
+	bboxAnnotationFormat: Schema.optional(Schema.NullOr(ResponseFormat$outboundSchema)),
+	documentAnnotationFormat: Schema.optional(Schema.NullOr(ResponseFormat$outboundSchema)),
+	documentAnnotationPrompt: Schema.optional(Schema.NullOr(Schema.String)),
+	tableFormat: Schema.optional(Schema.NullOr(TableFormat$outboundSchema)),
+	extractHeader: Schema.optional(Schema.Boolean),
+	extractFooter: Schema.optional(Schema.Boolean)
+}).pipe(Schema.encodeKeys({
+	includeImageBase64: "include_image_base64",
+	imageLimit: "image_limit",
+	imageMinSize: "image_min_size",
+	bboxAnnotationFormat: "bbox_annotation_format",
+	documentAnnotationFormat: "document_annotation_format",
+	documentAnnotationPrompt: "document_annotation_prompt",
+	tableFormat: "table_format",
+	extractHeader: "extract_header",
+	extractFooter: "extract_footer"
+}))
