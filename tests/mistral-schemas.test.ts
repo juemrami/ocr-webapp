@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
 	CreateFileResponse$inboundSchema,
 	OCRResponse$inboundSchema
-} from "../src/modules/mistral-http-client/schemas/inbound"
+} from "../src/modules/mistral/schemas/inbound"
 
 describe("mistral schemas", () => {
 	it("decode and encode correctly", () => {

@@ -1,6 +1,6 @@
 import type { OCRRequest } from "@mistralai/mistralai/models/components"
 import { Effect, Layer, ServiceMap } from "effect"
-import { MistralBaseClient, type MistralClientConfig, OCR_MODELS } from "./mistral-http-client/client"
+import { MistralBaseClient, type MistralClientConfig, OCR_MODELS } from "./open-api-client"
 
 export class MistralOcrClient extends ServiceMap.Service<MistralOcrClient>()("MistralOcrClient", {
 	make: Effect.gen(function*() {

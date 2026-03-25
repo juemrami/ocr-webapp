@@ -3,7 +3,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { isReadableStream } from "@mistralai/mistralai/types/streams.js"
 import { Effect, FileSystem, Layer, pipe } from "effect"
 import { TracerPropagationEnabled } from "effect/unstable/http/HttpClient"
-import { isBlobLike } from "../src/modules/mistral-http-client/schemas/outbound"
+import { isBlobLike } from "../src/modules/mistral/schemas/outbound"
 import { httpBodyFromMultiPartBodyParams, isNodeBuffer, MistralOcrClient } from "../src/modules/mistral-ocr"
 
 const httpClientLayer = NodeHttpClient.layerFetch.pipe(

@@ -4,12 +4,12 @@ import { micromark } from "micromark"
 import { math, mathHtml } from "micromark-extension-math"
 import type { Component, JSX } from "solid-js"
 import { createEffect, createSignal, onCleanup } from "solid-js"
-import { effect } from "solid-js/web"
 import { Eye, EyeOff } from "./components/icons.tsx"
 import { Popover, PopoverAnchor, PopoverContent } from "./components/ui/popover.tsx"
-import { makeParseFileAtom } from "./index.ts"
 import { decryptApiKey, encryptApiKey } from "./modules/encryption.ts"
-import { mistralApiKeyAtom, mistralEncryptedKeyAtom, useAtom, useAtomSet, useAtomValue } from "./modules/reactivity.ts"
+import { mistralApiKeyAtom, mistralEncryptedKeyAtom } from "./modules/mistral/atoms/credentials.ts"
+import { makeParseFileAtom } from "./modules/mistral/atoms/functions.ts"
+import { useAtom, useAtomSet, useAtomValue } from "./modules/solid-atom.ts"
 
 const App: Component = () => {
 	const [uploadedFile, setuploadedFile] = createSignal<File | null>(null)
@@ -177,8 +177,6 @@ const App: Component = () => {
 				<h1 class="text-3xl sm:text-4xl font-bold">Mistral OCR Webapp</h1>
 				<p class="mt-2 text-sm text-slate-600">Upload a file and get plain markdown text.</p>
 			</header>
-
-			{/* <DebugMistralApiKeyConfig /> */}
 
 			<div class="flex flex-col">
 				<section class="markdown-area rounded-xl bg-white px-6 py-3 shadow-sm">

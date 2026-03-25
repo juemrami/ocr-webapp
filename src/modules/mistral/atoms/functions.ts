@@ -1,13 +1,13 @@
 import type { FileT } from "@mistralai/mistralai/models/components"
 import type { OCRPageObject } from "@mistralai/mistralai/models/components/ocrpageobject.js"
-import { Console, Effect, Layer, pipe } from "effect"
+import { Effect, Layer, pipe } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { TracerPropagationEnabled } from "effect/unstable/http/HttpClient"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
-import { decryptApiKey } from "./modules/encryption"
-import { MistralOcrClient } from "./modules/mistral"
-import { MistralClientConfig } from "./modules/mistral-http-client/client"
-import { mistralApiKeyAtom, mistralEncryptedKeyAtom } from "./modules/reactivity"
+import { decryptApiKey } from "../../encryption"
+import { MistralOcrClient } from "../app-client"
+import { MistralClientConfig } from "../open-api-client"
+import { mistralApiKeyAtom, mistralEncryptedKeyAtom } from "./credentials"
 
 /**
  * Replaces image references in markdown with base64 data URIs
